@@ -1,8 +1,57 @@
+;------------------------------------------------------------------------------
+; MAI Visual Settings - Armor-based anomaly damage and ignore settings
+; Part of MAI (Mutant/Anomaly Interaction) by AllC0r3
+;
+; This file allows defining custom damage multipliers and ignored anomalies
+; based on NPC visual (armor model).
+;
+; Format:
+;   [visual_path]
+;   ignore_list = anomaly_pattern1,anomaly_pattern2,...
+;   damage_list = anomaly_pattern1|multiplier,anomaly_pattern2|multiplier,...
+;
+; Or inherit from a base section:
+;   [visual_path]:base_section
+;
+; Example:
+;   - ignore_list: NPCs wearing this armor won't evade these anomaly types
+;   - damage_list: Damage multiplier when hit by these anomaly types
+;     (1.0 = normal, 0.5 = half damage, 2.0 = double damage)
+;------------------------------------------------------------------------------
+
+;------------------------------------------------------------------------------
+; BASE TEMPLATES
+;------------------------------------------------------------------------------
+
+; SEVA suit base - Good chemical protection, weak against gravity/electric
 [base_seva]
 ignore_list = zone_field_acidic,zone_mine_acidic,zone_mine_chemical
-damage_list =  zone_mine_gravitational|1.2,zone_mine_electric|0.8,zone_mine_static|0.8,zone_witches_galantine|0.8
+damage_list = zone_mine_gravitational|1.2,zone_mine_electric|0.8,zone_mine_static|0.8,zone_witches_galantine|0.8
+
+;------------------------------------------------------------------------------
+; BANDIT SEVA SUITS
+;------------------------------------------------------------------------------
 
 [actors\stalker_bandit\stalker_bandit_seva1]:base_seva
 [actors\stalker_bandit\stalker_bandit_seva2]:base_seva
+
+;------------------------------------------------------------------------------
+; FREEDOM SEVA SUITS
+;------------------------------------------------------------------------------
+
 [actors\stalker_freedom\stalker_free_0]:base_seva
 [actors\stalker_freedom\stalker_free0a]:base_seva
+
+;------------------------------------------------------------------------------
+; ADD MORE ARMOR CONFIGURATIONS BELOW
+;------------------------------------------------------------------------------
+
+; Example: Exoskeleton with good overall protection
+; [base_exo]
+; ignore_list = zone_mine_gravitational_weak
+; damage_list = zone_mine_electric|0.7,zone_mine_thermal|0.8
+
+; Example: Light stalker suit - vulnerable to most anomalies
+; [base_light]
+; ignore_list = 
+; damage_list = zone_mine_gravitational|1.5,zone_mine_electric|1.3

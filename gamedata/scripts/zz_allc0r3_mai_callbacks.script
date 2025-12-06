@@ -1,134 +1,267 @@
---just some new callbacks
+--[[
+    MAI Callbacks - Custom script callbacks for NPC state tracking
+    Part of MAI (Mutant/Anomaly Interaction) by AllC0r3
+    
+    This module provides additional callbacks for tracking NPC state changes:
+    - Community changes
+    - Companion status changes
+    - Level transitions
+    - Corpse looting state
+    - Kill wounded state
+    - Task events
+    - Sleep events
+--]]
+
+--------------------------------------------------------------------------------
+-- Module Variables
+--------------------------------------------------------------------------------
+
 npc_table = {}
 local sn = script_name()
+
+--------------------------------------------------------------------------------
+-- NPC Lifecycle Handlers
+--------------------------------------------------------------------------------
+
+--- Called when NPC spawns on the network
+-- @param npc The NPC object
+-- @param sobj Server object
 function npc_on_net_spawn(npc, sobj)
-	local id = npc:id()  
-	if not npc_table[id] then
-		--local vis = npc:get_visual_name()
-		local comp = npc:has_info("npcx_is_companion")
-		local comm = npc:character_community()
-		local level = level.name() 
-		npc_table[id] = {}
-		--npc_table[id][1] = vis 
-		npc_table[id][2] = comm
-		npc_table[id][3] = comp
-		npc_table[id][4] = level
-		npc_table[id][5] = xr_corpse_detection.is_under_corpse_detection(npc)
-		npc_table[id][6] = xrs_kill_wounded.is_under_kill_wounded(npc)
-	end
+    local id = npc:id()
+    
+    if not npc_table[id] then
+        local comp = npc:has_info("npcx_is_companion")
+        local comm = npc:character_community()
+        local cur_level = level.name()
+        
+        npc_table[id] = {
+            -- [1] = visual (disabled)
+            [2] = comm,
+            [3] = comp,
+            [4] = cur_level,
+            [5] = xr_corpse_detection.is_under_corpse_detection(npc),
+            [6] = xrs_kill_wounded.is_under_kill_wounded(npc)
+        }
+    end
 end
+
+--- Called when NPC is destroyed from the network
+-- @param npc The NPC object
 function npc_on_net_destroy(npc)
-	npc_table[npc:id()] = nil
+    npc_table[npc:id()] = nil
 end
+
+--- Called when NPC dies
+-- @param npc The NPC that died
+-- @param who The killer
 function npc_on_death_callback(npc, who)
-	npc_table[npc:id()] = nil
+    npc_table[npc:id()] = nil
 end
---AddScriptCallback("npc_on_visual_change")
+
+--------------------------------------------------------------------------------
+-- Custom Callback Registration
+--------------------------------------------------------------------------------
+
+-- Register custom callbacks
+-- AddScriptCallback("npc_on_visual_change")  -- Disabled
 AddScriptCallback("npc_on_community_change")
 AddScriptCallback("npc_on_companion_change")
 AddScriptCallback("npc_on_level_change")
 AddScriptCallback("npc_on_corpse_loot")
 AddScriptCallback("npc_on_kill_wounded")
+
+--------------------------------------------------------------------------------
+-- NPC Update Handler
+--------------------------------------------------------------------------------
+
+--- Called on NPC update - detects state changes
+-- @param npc The NPC object
+-- @param st State table
 function npc_on_update(npc, st)
     if not npc or not npc:alive() or not npc_table[npc:id()] then
         return
     end
-	local id = npc:id()
-	--local vis = npc:get_visual_name()
-	local comp = npc:has_info("npcx_is_companion")
-	local comm = npc:character_community()
-	local level = level.name()
-	local corpse_loot = xr_corpse_detection.is_under_corpse_detection(npc)
-	local kill_wounded = xrs_kill_wounded.is_under_kill_wounded(npc)
-	--[[if npc_table[id][1] ~= vis then
-		npc_table[id][1] = vis
-		SendScriptCallback("npc_on_visual_change", npc, vis)
-	end]]
-	if npc_table[id][3] ~= comp then
-		npc_table[id][3] = comp
-		SendScriptCallback("npc_on_companion_change", npc, comp)
-	end	
-	if npc_table[id][2] ~= comm then
-		npc_table[id][2] = comm
-		SendScriptCallback("npc_on_community_change", npc, comm)
-	end	
-	if npc_table[id][4] ~= level then
-		npc_table[id][4] = level
-		SendScriptCallback("npc_on_level_change", npc, level)
-	end
-	if npc_table[id][5] ~= corpse_loot then
-		npc_table[id][5] = corpse_loot
-		SendScriptCallback("npc_on_corpse_loot", npc, corpse_loot)
-	end
-	if npc_table[id][6] ~= kill_wounded then
-		npc_table[id][6] = kill_wounded
-		SendScriptCallback("npc_on_kill_wounded", npc, kill_wounded)
-	end
+    
+    local id = npc:id()
+    local comp = npc:has_info("npcx_is_companion")
+    local comm = npc:character_community()
+    local cur_level = level.name()
+    local corpse_loot = xr_corpse_detection.is_under_corpse_detection(npc)
+    local kill_wounded = xrs_kill_wounded.is_under_kill_wounded(npc)
+    
+    --[[ Visual change detection (disabled)
+    local vis = npc:get_visual_name()
+    if npc_table[id][1] ~= vis then
+        npc_table[id][1] = vis
+        SendScriptCallback("npc_on_visual_change", npc, vis)
+    end
+    --]]
+    
+    -- Companion status change
+    if npc_table[id][3] ~= comp then
+        npc_table[id][3] = comp
+        SendScriptCallback("npc_on_companion_change", npc, comp)
+    end
+    
+    -- Community change
+    if npc_table[id][2] ~= comm then
+        npc_table[id][2] = comm
+        SendScriptCallback("npc_on_community_change", npc, comm)
+    end
+    
+    -- Level change
+    if npc_table[id][4] ~= cur_level then
+        npc_table[id][4] = cur_level
+        SendScriptCallback("npc_on_level_change", npc, cur_level)
+    end
+    
+    -- Corpse looting state change
+    if npc_table[id][5] ~= corpse_loot then
+        npc_table[id][5] = corpse_loot
+        SendScriptCallback("npc_on_corpse_loot", npc, corpse_loot)
+    end
+    
+    -- Kill wounded state change
+    if npc_table[id][6] ~= kill_wounded then
+        npc_table[id][6] = kill_wounded
+        SendScriptCallback("npc_on_kill_wounded", npc, kill_wounded)
+    end
 end
+
+--------------------------------------------------------------------------------
+-- Task Manager Hooks
+--------------------------------------------------------------------------------
+
 AddScriptCallback("tm_give_task")
+
+-- Store original function
 ogive_task = task_manager.CRandomTask.give_task
+
+--- Hook for task_manager.CRandomTask.give_task
+-- @param self Task manager instance
+-- @param task_id Task ID
+-- @param task_giver_id ID of NPC giving task
 function task_manager.CRandomTask.give_task(self, task_id, task_giver_id)
-	ogive_task(self, task_id, task_giver_id)
-	printf("%s - give task %s -> %s", sn, task_giver_id, task_id)
-	SendScriptCallback("tm_give_task", task_giver_id, task_id)
+    ogive_task(self, task_id, task_giver_id)
+    printf("%s - give task %s -> %s", sn, task_giver_id, task_id)
+    SendScriptCallback("tm_give_task", task_giver_id, task_id)
 end
+
 AddScriptCallback("tm_complete_task")
+
+-- Store original function
 otask_complete = task_manager.task_complete
+
+--- Hook for task_manager.task_complete
+-- @param task_id Task ID
+-- @return boolean Original function result
 function task_manager.task_complete(task_id)
-	if otask_complete(task_id) then
-		SendScriptCallback("tm_complete_task", task_id)
-		printf("%s - complete task %s", sn,  task_id)
-	end
-	return otask_complete(task_id)
+    local result = otask_complete(task_id)
+    if result then
+        SendScriptCallback("tm_complete_task", task_id)
+        printf("%s - complete task %s", sn, task_id)
+    end
+    return result
 end
+
 AddScriptCallback("tm_fail_task")
+
+-- Store original function
 otask_fail = task_manager.task_fail
+
+--- Hook for task_manager.task_fail
+-- @param task_id Task ID
+-- @return boolean Original function result
 function task_manager.task_fail(task_id)
-	if otask_fail(task_id) then
-		SendScriptCallback("tm_fail_task", task_id)
-		printf("%s - fail task %s", sn,  task_id)
-	end
-	return otask_fail(task_id)
+    local result = otask_fail(task_id)
+    if result then
+        SendScriptCallback("tm_fail_task", task_id)
+        printf("%s - fail task %s", sn, task_id)
+    end
+    return result
 end
+
+--------------------------------------------------------------------------------
+-- Save/Load
+--------------------------------------------------------------------------------
+
+--- Load saved NPC table
+-- @param mdata Save data table
 function load_state(mdata)
-	npc_table = mdata.AllC0r3_npc_table or {}
+    npc_table = mdata.AllC0r3_npc_table or {}
 end
+
+--- Save NPC table
+-- @param mdata Save data table
 function save_state(mdata)
-	mdata.AllC0r3_npc_table = npc_table
+    mdata.AllC0r3_npc_table = npc_table
 end
+
+--- Clean up when server entity is unregistered
+-- @param se_obj Server entity object
 function server_entity_on_unregister(se_obj)
-	npc_table[se_obj.id] = nil
+    npc_table[se_obj.id] = nil
 end
+
+--------------------------------------------------------------------------------
+-- Death Callback Hook
+--------------------------------------------------------------------------------
+
 AddScriptCallback("npc_on_death_callback_new")
+
+-- Store original function
 npc_death_callback = xr_motivator.motivator_binder.death_callback
+
+--- Hook for xr_motivator death callback - provides killer info
+-- @param self Binder instance
+-- @param victim The NPC that died
+-- @param who The killer
 function xr_motivator.motivator_binder.death_callback(self, victim, who)
-	npc_death_callback(self, victim, who)
-	if who and (IsStalker(who) or IsMonster(who) or IsAnomaly(who)) then
-		SendScriptCallback("npc_on_death_callback_new", victim, who)
-	end
+    npc_death_callback(self, victim, who)
+    if who and (IsStalker(who) or IsMonster(who) or IsAnomaly(who)) then
+        SendScriptCallback("npc_on_death_callback_new", victim, who)
+    end
 end
+
+--------------------------------------------------------------------------------
+-- Sleep State Tracking
+--------------------------------------------------------------------------------
+
 AddScriptCallback("actor_on_sleep_new")
+
 sleep_is_active = false
 local tmr = 0
+
+--- Track sleep state changes via actor update
 function actor_on_update()
-	local tg = time_global()
-	if tmr > tg then return end
-	tmr = tg + 200
-	if not sleep_is_active and has_alife_info("sleep_active") then
-		SendScriptCallback("actor_on_sleep_new", has_alife_info("sleep_active"))
-		sleep_is_active = true
-	elseif  sleep_is_active and not has_alife_info("sleep_active") then
-		SendScriptCallback("actor_on_sleep_new", has_alife_info("sleep_active"))
-		sleep_is_active = false		
-	end
+    local tg = time_global()
+    
+    if tmr > tg then
+        return
+    end
+    tmr = tg + 200
+    
+    if not sleep_is_active and has_alife_info("sleep_active") then
+        SendScriptCallback("actor_on_sleep_new", has_alife_info("sleep_active"))
+        sleep_is_active = true
+    elseif sleep_is_active and not has_alife_info("sleep_active") then
+        SendScriptCallback("actor_on_sleep_new", has_alife_info("sleep_active"))
+        sleep_is_active = false
+    end
 end
+
+--------------------------------------------------------------------------------
+-- Initialization
+--------------------------------------------------------------------------------
+
+--- Register all callbacks on game start
 function on_game_start()
-    RegisterScriptCallback("npc_on_net_spawn",npc_on_net_spawn)
-    RegisterScriptCallback("npc_on_net_destroy",npc_on_net_destroy)
-    RegisterScriptCallback("npc_on_death_callback",npc_on_death_callback)
+    RegisterScriptCallback("npc_on_net_spawn", npc_on_net_spawn)
+    RegisterScriptCallback("npc_on_net_destroy", npc_on_net_destroy)
+    RegisterScriptCallback("npc_on_death_callback", npc_on_death_callback)
     RegisterScriptCallback("npc_on_update", npc_on_update)
-	RegisterScriptCallback("load_state", load_state)
-	RegisterScriptCallback("save_state", save_state)
-	RegisterScriptCallback("server_entity_on_unregister", server_entity_on_unregister)
-	RegisterScriptCallback("actor_on_update", actor_on_update)
+    RegisterScriptCallback("load_state", load_state)
+    RegisterScriptCallback("save_state", save_state)
+    RegisterScriptCallback("server_entity_on_unregister", server_entity_on_unregister)
+    RegisterScriptCallback("actor_on_update", actor_on_update)
 end

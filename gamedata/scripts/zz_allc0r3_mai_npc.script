@@ -1,100 +1,194 @@
+--[[
+    MAI NPC Handler - NPC event handlers for anomaly evasion
+    Part of MAI (Mutant/Anomaly Interaction) by AllC0r3
+    
+    This module handles NPC lifecycle events and connects them to the
+    main MAI system for anomaly detection and evasion.
+--]]
+
+--------------------------------------------------------------------------------
+-- Local References
+--------------------------------------------------------------------------------
+
 local _dbg = zz_allc0r3_mai_main._dbg_printf
 local sn = script_name()
 
+--------------------------------------------------------------------------------
+-- NPC Lifecycle Handlers
+--------------------------------------------------------------------------------
+
+--- Called when NPC spawns - subscribe to anomaly evasion
+-- @param npc The NPC object
+-- @param sobj Server object
 function mai_on_npc_net_spawn(npc, sobj)
-	zz_allc0r3_mai_main.mai_subscribe(npc, "npc", "~[MAI]["..sn.."][mai_on_npc_net_spawn] TRY SUBSCRIBE NPC ["..npc:name().."]")
+    zz_allc0r3_mai_main.mai_subscribe(npc, "npc",
+        "~[MAI][" .. sn .. "][mai_on_npc_net_spawn] TRY SUBSCRIBE NPC [" .. npc:name() .. "]")
 end
 
+--- Called on NPC update - process anomaly evasion
+-- @param npc The NPC object
+-- @param st State table
 function mai_on_npc_update(npc, st)
-	zz_allc0r3_mai_main.mai_evade(npc, "npc")
+    zz_allc0r3_mai_main.mai_evade(npc, "npc")
 end
 
+--- Called when NPC dies - unsubscribe from anomaly evasion
+-- @param npc The NPC that died
+-- @param who The killer
 function mai_on_npc_death(npc, who)
-	zz_allc0r3_mai_main.mai_unsubscribe(npc, "npc", "~[MAI]["..sn.."][mai_on_npc_death] TRY UNSUBSCRIBE NPC ["..npc:name().."] WHO ["..who:name().."]")
+    local killer_name = who and who:name() or "unknown"
+    zz_allc0r3_mai_main.mai_unsubscribe(npc, "npc",
+        "~[MAI][" .. sn .. "][mai_on_npc_death] TRY UNSUBSCRIBE NPC [" .. npc:name() .. "] WHO [" .. killer_name .. "]")
 end
 
+--- Called when NPC is destroyed - unsubscribe from anomaly evasion
+-- @param npc The NPC object
 function mai_on_npc_net_destroy(npc)
-	zz_allc0r3_mai_main.mai_unsubscribe(npc, "npc", "~[MAI]["..sn.."][mai_on_npc_net_destroy] TRY UNSUBSCRIBE NPC ["..npc:name().."]")
+    zz_allc0r3_mai_main.mai_unsubscribe(npc, "npc",
+        "~[MAI][" .. sn .. "][mai_on_npc_net_destroy] TRY UNSUBSCRIBE NPC [" .. npc:name() .. "]")
 end
 
+--------------------------------------------------------------------------------
+-- NPC State Change Handlers
+--------------------------------------------------------------------------------
+
+--- Called when NPC community changes - resubscribe with new settings
+-- @param npc The NPC object
+-- @param comm New community
 function mai_on_npc_community_change(npc, comm)
-	zz_allc0r3_mai_main.mai_unsubscribe(npc, "npc", "~[MAI]["..sn.."][mai_on_npc_community_change] TRY UNSUBSCRIBE NPC ["..npc:name().."]")
-	zz_allc0r3_mai_main.mai_subscribe(npc, "npc", "~[MAI]["..sn.."][mai_on_npc_community_change] TRY SUBSCRIBE NPC ["..npc:name().."]")
+    zz_allc0r3_mai_main.mai_unsubscribe(npc, "npc",
+        "~[MAI][" .. sn .. "][mai_on_npc_community_change] TRY UNSUBSCRIBE NPC [" .. npc:name() .. "]")
+    zz_allc0r3_mai_main.mai_subscribe(npc, "npc",
+        "~[MAI][" .. sn .. "][mai_on_npc_community_change] TRY SUBSCRIBE NPC [" .. npc:name() .. "]")
 end
 
+--- Called when NPC companion status changes - resubscribe with new settings
+-- @param npc The NPC object
+-- @param comp New companion status
 function mai_on_npc_companion_change(npc, comp)
-	zz_allc0r3_mai_main.mai_unsubscribe(npc, "npc", "~[MAI]["..sn.."][mai_on_npc_companion_change] TRY UNSUBSCRIBE NPC ["..npc:name().."]")
-	zz_allc0r3_mai_main.mai_subscribe(npc, "npc", "~[MAI]["..sn.."][mai_on_npc_companion_change] TRY SUBSCRIBE NPC ["..npc:name().."]")
+    zz_allc0r3_mai_main.mai_unsubscribe(npc, "npc",
+        "~[MAI][" .. sn .. "][mai_on_npc_companion_change] TRY UNSUBSCRIBE NPC [" .. npc:name() .. "]")
+    zz_allc0r3_mai_main.mai_subscribe(npc, "npc",
+        "~[MAI][" .. sn .. "][mai_on_npc_companion_change] TRY SUBSCRIBE NPC [" .. npc:name() .. "]")
 end
 
---
+--- Called when NPC visual changes - resubscribe with new settings (disabled)
+-- @param npc The NPC object
+-- @param vis New visual
 function mai_on_npc_visual_change(npc, vis)
-	zz_allc0r3_mai_main.mai_unsubscribe(npc, "npc", "~[MAI]["..sn.."][mai_on_npc_visual_change] TRY UNSUBSCRIBE NPC ["..npc:name().."]")
-	zz_allc0r3_mai_main.mai_subscribe(npc, "npc", "~[MAI]["..sn.."][mai_on_npc_visual_change] TRY SUBSCRIBE NPC ["..npc:name().."]")
+    zz_allc0r3_mai_main.mai_unsubscribe(npc, "npc",
+        "~[MAI][" .. sn .. "][mai_on_npc_visual_change] TRY UNSUBSCRIBE NPC [" .. npc:name() .. "]")
+    zz_allc0r3_mai_main.mai_subscribe(npc, "npc",
+        "~[MAI][" .. sn .. "][mai_on_npc_visual_change] TRY SUBSCRIBE NPC [" .. npc:name() .. "]")
 end
---
 
+--- Called when NPC starts/stops looting corpses - suspend/resume evasion
+-- @param npc The NPC object
+-- @param corpse_looting True if NPC is looting
 function mai_on_npc_corpse_loot(npc, corpse_looting)
-	if corpse_looting then
-		zz_allc0r3_mai_main.mai_unsubscribe(npc, "npc", "~[MAI]["..sn.."][mai_on_npc_corpse_loot] TRY UNSUBSCRIBE NPC ["..npc:name().."]")
-	else
-		zz_allc0r3_mai_main.mai_subscribe(npc, "npc", "~[MAI]["..sn.."][mai_on_npc_corpse_loot] TRY SUBSCRIBE NPC ["..npc:name().."]")
-	end
+    if corpse_looting then
+        zz_allc0r3_mai_main.mai_unsubscribe(npc, "npc",
+            "~[MAI][" .. sn .. "][mai_on_npc_corpse_loot] TRY UNSUBSCRIBE NPC [" .. npc:name() .. "]")
+    else
+        zz_allc0r3_mai_main.mai_subscribe(npc, "npc",
+            "~[MAI][" .. sn .. "][mai_on_npc_corpse_loot] TRY SUBSCRIBE NPC [" .. npc:name() .. "]")
+    end
 end
 
+--- Called when NPC starts/stops killing wounded - suspend/resume evasion
+-- @param npc The NPC object
+-- @param kill_wounded True if NPC is killing wounded
 function mai_on_npc_kill_wounded(npc, kill_wounded)
-	if kill_wounded then
-		zz_allc0r3_mai_main.mai_unsubscribe(npc, "npc", "~[MAI]["..sn.."][mai_on_npc_kill_wounded] TRY UNSUBSCRIBE NPC ["..npc:name().."]")
-	else
-		zz_allc0r3_mai_main.mai_subscribe(npc, "npc", "~[MAI]["..sn.."][mai_on_npc_kill_wounded] TRY SUBSCRIBE NPC ["..npc:name().."]")
-	end
+    if kill_wounded then
+        zz_allc0r3_mai_main.mai_unsubscribe(npc, "npc",
+            "~[MAI][" .. sn .. "][mai_on_npc_kill_wounded] TRY UNSUBSCRIBE NPC [" .. npc:name() .. "]")
+    else
+        zz_allc0r3_mai_main.mai_subscribe(npc, "npc",
+            "~[MAI][" .. sn .. "][mai_on_npc_kill_wounded] TRY SUBSCRIBE NPC [" .. npc:name() .. "]")
+    end
 end
 
---[[
+--[[ Server entity unregister handler (disabled)
 function server_entity_on_unregister(se_obj)
-	zz_allc0r3_mai_main.mai_unsubscribe(se_obj, "npc_serv", "~[MAI]["..sn.."][server_entity_on_unregister] TRY UNSUBSCRIBE NPC ["..se_obj:name().."]")
-end]]
+    zz_allc0r3_mai_main.mai_unsubscribe(se_obj, "npc_serv",
+        "~[MAI][" .. sn .. "][server_entity_on_unregister] TRY UNSUBSCRIBE NPC [" .. se_obj:name() .. "]")
+end
+--]]
 
-function mai_on_npc_before_hit(npc,shit,bone_id,flags)
-	if not npc then return end
-	local cur_level = level.name()
-	if IsAnomaly(shit.draftsman) then
-		local anomaly = shit.draftsman
-		if zz_allc0r3_mai_main.surge_started() then
-			flags.ret_value = false
-			_dbg("~[MAI][%s][mai_on_npc_before_hit] SURGE, DONT DAMAGE ANY NPC, %s", sn, anomaly:name())
-			return		
-		end
-		if zz_allc0r3_mai_main.is_always_skip_anomalies(anomaly) then
-			flags.ret_value = false
-			_dbg("~[MAI][%s][mai_on_npc_before_hit] IGNORE ANOMALY[%s], DONT DAMAGE", sn, anomaly:name())
-			return
-		end
-		if not zz_allc0r3_mai_main.mai_subscribed(npc, "npc") or (zz_allc0r3_mai_main.mai_mob_session[id] and zz_allc0r3_mai_main.mai_mob_session[id].subscribe == false)  then
-			flags.ret_value = false
-			_dbg("~[MAI][%s][mai_on_npc_before_hit] NOT SUBSCRIBED NPC[%s], DONT DAMAGE, %s", sn, npc:name(), anomaly:name())
-			return			
-		end
-		if zz_allc0r3_mai_main.is_npc_ignore_anom(npc, anomaly) then
-			flags.ret_value = false
-			_dbg("~[MAI][%s][mai_on_npc_before_hit] IGNORE THIS ANOM[%s], DONT DAMAGE, %s", sn, npc:name(), anomaly:name())
-			return					
-		end
-		_dbg("-[MAI][%s][mai_on_npc_before_hit] SUBSCRIBED NPC[%s], DAMAGED BY %s", sn, npc:name(), anomaly:name())
-		shit.power = shit.power * zz_allc0r3_mai_main.get_npc_dmg_mult(npc, anomaly)
-	end
+--------------------------------------------------------------------------------
+-- Hit Handler
+--------------------------------------------------------------------------------
+
+--- Called before NPC takes damage - filter anomaly damage
+-- @param npc The NPC being hit
+-- @param shit Hit info table
+-- @param bone_id Bone that was hit
+-- @param flags Flags table (can set ret_value to false to cancel hit)
+function mai_on_npc_before_hit(npc, shit, bone_id, flags)
+    if not npc then
+        return
+    end
+    
+    local cur_level = level.name()
+    
+    if IsAnomaly(shit.draftsman) then
+        local anomaly = shit.draftsman
+        local id = npc:id()
+        
+        -- During surge, don't damage any NPC
+        if zz_allc0r3_mai_main.surge_started() then
+            flags.ret_value = false
+            _dbg("~[MAI][%s][mai_on_npc_before_hit] SURGE, DONT DAMAGE ANY NPC, %s", sn, anomaly:name())
+            return
+        end
+        
+        -- Skip ignored anomalies
+        if zz_allc0r3_mai_main.is_always_skip_anomalies(anomaly) then
+            flags.ret_value = false
+            _dbg("~[MAI][%s][mai_on_npc_before_hit] IGNORE ANOMALY[%s], DONT DAMAGE", sn, anomaly:name())
+            return
+        end
+        
+        -- Don't damage unsubscribed NPCs or NPCs that haven't started processing yet
+        if not zz_allc0r3_mai_main.mai_subscribed(npc, "npc") or
+           (zz_allc0r3_mai_main.mai_mob_session[id] and
+            zz_allc0r3_mai_main.mai_mob_session[id].subscribe == false) then
+            flags.ret_value = false
+            _dbg("~[MAI][%s][mai_on_npc_before_hit] NOT SUBSCRIBED NPC[%s], DONT DAMAGE, %s",
+                sn, npc:name(), anomaly:name())
+            return
+        end
+        
+        -- Check if NPC should ignore this anomaly type (based on armor)
+        if zz_allc0r3_mai_main.is_npc_ignore_anom(npc, anomaly) then
+            flags.ret_value = false
+            _dbg("~[MAI][%s][mai_on_npc_before_hit] IGNORE THIS ANOM[%s], DONT DAMAGE, %s",
+                sn, npc:name(), anomaly:name())
+            return
+        end
+        
+        -- Apply damage with multiplier based on armor
+        _dbg("-[MAI][%s][mai_on_npc_before_hit] SUBSCRIBED NPC[%s], DAMAGED BY %s",
+            sn, npc:name(), anomaly:name())
+        shit.power = shit.power * zz_allc0r3_mai_main.get_npc_dmg_mult(npc, anomaly)
+    end
 end
 
+--------------------------------------------------------------------------------
+-- Initialization
+--------------------------------------------------------------------------------
+
+--- Register all callbacks on game start
 function on_game_start()
-	RegisterScriptCallback("npc_on_net_spawn",mai_on_npc_net_spawn)
-	RegisterScriptCallback("npc_on_net_destroy",mai_on_npc_net_destroy)
-	RegisterScriptCallback("npc_on_death_callback_new",mai_on_npc_death)
-	RegisterScriptCallback("npc_on_update",mai_on_npc_update)
-	RegisterScriptCallback("npc_on_before_hit", mai_on_npc_before_hit)
-	RegisterScriptCallback("npc_on_community_change", mai_on_npc_community_change)
-	RegisterScriptCallback("npc_on_companion_change", mai_on_npc_companion_change)
-	--RegisterScriptCallback("npc_on_visual_change", mai_on_npc_visual_change)
-	RegisterScriptCallback("npc_on_corpse_loot", mai_on_npc_corpse_loot)
-	RegisterScriptCallback("npc_on_kill_wounded", mai_on_npc_kill_wounded)
-	--RegisterScriptCallback("server_entity_on_unregister", server_entity_on_unregister)	
+    RegisterScriptCallback("npc_on_net_spawn", mai_on_npc_net_spawn)
+    RegisterScriptCallback("npc_on_net_destroy", mai_on_npc_net_destroy)
+    RegisterScriptCallback("npc_on_death_callback_new", mai_on_npc_death)
+    RegisterScriptCallback("npc_on_update", mai_on_npc_update)
+    RegisterScriptCallback("npc_on_before_hit", mai_on_npc_before_hit)
+    RegisterScriptCallback("npc_on_community_change", mai_on_npc_community_change)
+    RegisterScriptCallback("npc_on_companion_change", mai_on_npc_companion_change)
+    -- RegisterScriptCallback("npc_on_visual_change", mai_on_npc_visual_change)  -- Disabled
+    RegisterScriptCallback("npc_on_corpse_loot", mai_on_npc_corpse_loot)
+    RegisterScriptCallback("npc_on_kill_wounded", mai_on_npc_kill_wounded)
+    -- RegisterScriptCallback("server_entity_on_unregister", server_entity_on_unregister)  -- Disabled
 end

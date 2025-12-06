@@ -1,15 +1,27 @@
+--[[
+    MAI Location Settings - Levels where anomaly evasion is disabled
+    Part of MAI (Mutant/Anomaly Interaction) by AllC0r3
+    
+    Anomaly evasion is disabled on these levels because they are:
+    - Underground labs (limited space, anomalies are part of level design)
+    - Very small locations (anomaly evasion not practical)
+--]]
+
 mai_always_ignore_levels = {
-    ["jupiter_underground"] = true, --подземка
-    ["l03u_agr_underground"] = true, --подземка
-    ["l08u_brainlab"] = true, --подземка
-    ["l10u_bunker"] = true, --подземка
-    ["l12u_control_monolith"] = true, --подземка
-    ["l12u_sarcofag"] = true, --подземка
-    ["l13u_warlab"] = true, --подземка
-    ["labx8"] = true, --подземка
-	["l11_hospital"] = true, -- слишком маленькая локация
-	["bunker_a1"] = true, --подземка
-	["collaider"] = true, --подземка
-	["y04_pole"] = true, -- маленькая
-	["zorius_atp_balls"] = true, --маленькая
+    -- Underground locations
+    ["jupiter_underground"]     = true,     -- Jupiter Underground
+    ["l03u_agr_underground"]    = true,     -- Agroprom Underground
+    ["l08u_brainlab"]           = true,     -- X-16 Brain Scorcher Lab
+    ["l10u_bunker"]             = true,     -- Radar Bunker
+    ["l12u_control_monolith"]   = true,     -- Monolith Control Center
+    ["l12u_sarcofag"]           = true,     -- Sarcophagus
+    ["l13u_warlab"]             = true,     -- X-8 Warlab
+    ["labx8"]                   = true,     -- Lab X-8 (alternate name)
+    ["bunker_a1"]               = true,     -- Bunker A1
+    ["collaider"]               = true,     -- Collider
+    
+    -- Small locations
+    ["l11_hospital"]            = true,     -- Hospital - too small
+    ["y04_pole"]                = true,     -- Small location
+    ["zorius_atp_balls"]        = true,     -- Small location
 }

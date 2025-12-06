@@ -1,41 +1,63 @@
---MAI by AllC0r3
---Rework ogse_anomaly_evader.script from OLR 3.0
---ignore_npc table from NPC Die For Real, by demonized
---Original authors - big thanks
 --[[
-Для след обновления:
- - Больше игнорируемых аномалий (нужна просто выборка, я один ее буду делать месяц)
- - NPC Unstacker - нужно продумать, так как для этого все есть
- - Переписать для большей читаемости
- - Базовая поддержка смены визуалов (только на основе инфы из конфигов)
- - Обход и дамаг для мутантов
-
-Планы:
- - Полная поддержка модов с новыми важными НПС
- - Полная поддержка Анталогии (частичная уже есть)
- - Полная поддержка DICK и подобных модов
- - Полноценное МСМ
- - Ограничить кол-во подписанных мобов на локацию
- - "Отбалансить" настройки
- - Добавить удаление багнутых (без радиуса и т.п.) Аномалий? И спавнить на их место нормальные?
- - Добавить для CCustomZone геттер getEnabled() (Хотя и сейчас можно +- получить инфу, но расходится с планами на "конфликтность")
- 
-Совсем уж далекие Планы:
- - посмотреть CAnomalyDetector в OGSR
- 
-Идея: (но у меня на это нет времени)Слишком много работы) 
- - Перебрать все аномалии, кроме тех что НПС должны игнорировать, и добавить\настроить им коллизию\рестриктор и установить радиус. Переписать bind_anomaly_field?
- - Багнутые удалить. На их место заспавнить что-то другое.
- - Немножко расчистить Аномальные поля, чтобы в теории НПС смогли пройти в каждом
- - Да. Нужно будет сделать два патча для DAO и Arrival
- - Да. Нужно будет полностью пересмотреть работу этого мода
- - Да. Будет менее вариативно
- - Да. Для Сборок типа Антологии - это будет проблемой (и скорее всего придется писать мелкий тутор как добавлять аномалии на удаление, на замену и какие настройки должны быть). Патч для Анталогии делать год с моими возможностями.
- - Да. Возможно значительное проседание ФПС из-за огромного кол-ва дин аномалий
+    MAI (Mutant/Anomaly Interaction) by AllC0r3
+    Rework of ogse_anomaly_evader.script from OLR 3.0
+    ignore_npc table from NPC Die For Real, by demonized
+    Original authors - big thanks!
+    
+    ============================================================================
+    TODO for next update:
+    ============================================================================
+    - More ignored anomalies (need selection, will take a month to do alone)
+    - NPC Unstacker - need to think through, since everything for it is ready
+    - Rewrite for better readability
+    - Basic visual change support (only based on config info)
+    - Pathfinding and damage for mutants
+    
+    ============================================================================
+    Plans:
+    ============================================================================
+    - Full support for mods with new important NPCs
+    - Full support for Anthology (partial support already exists)
+    - Full support for DICK and similar mods
+    - Full-featured MCM
+    - Limit number of subscribed mobs per location
+    - "Rebalance" settings
+    - Add removal of bugged anomalies (without radius etc.)? Spawn normal ones in their place?
+    - Add getEnabled() getter for CCustomZone (Although info can +/- be obtained now, 
+      but conflicts with plans for "conflict detection")
+    
+    ============================================================================
+    Far future plans:
+    ============================================================================
+    - Look at CAnomalyDetector in OGSR
+    
+    ============================================================================
+    Ideas (but I don't have time for this - too much work):
+    ============================================================================
+    - Go through all anomalies except those NPCs should ignore, 
+      add/configure collision/restrictor and set radius. Rewrite bind_anomaly_field?
+    - Remove bugged ones. Spawn something else in their place.
+    - Clear anomaly fields a bit so NPCs could theoretically pass through each
+    - Yes, will need to make two patches for DAO and Arrival
+    - Yes, will need to completely rethink how this mod works
+    - Yes, will be less variable
+    - Yes, for compilations like Anthology this will be a problem 
+      (and likely will need to write a small tutorial on how to add anomalies 
+      for removal, replacement, and what settings should be). 
+      Patch for Anthology would take a year with my capabilities.
+    - Yes, possible significant FPS drop due to huge number of dynamic anomalies
 --]]
+
+--------------------------------------------------------------------------------
+-- Configuration
+--------------------------------------------------------------------------------
+
 local mod_dbg = false
 local mod_enable = true
-npc_count = 0
+
+--------------------------------------------------------------------------------
+-- Local aliases for performance
+--------------------------------------------------------------------------------
 
 local sf = string.find
 local ti = table.insert
@@ -43,510 +65,751 @@ local tc = table.concat
 local tg = table.getn
 local sn = script_name()
 local rd = math.random
+
+--------------------------------------------------------------------------------
+-- Module variables
+--------------------------------------------------------------------------------
+
 local mai_npc_settings_file = ini_file("plugins\\mai\\mai_visual_settings.ltx")
 
+npc_count = 0
 mai_mob_session = {}
-mai_quest_mob_stor = {} --временное решение, переписать в след версии
+mai_quest_mob_stor = {}  -- Temporary solution, rewrite in next version
 mai_npc_settings_by_visual = {}
 
+--------------------------------------------------------------------------------
+-- Core Functions
+--------------------------------------------------------------------------------
 
+--- Configure NPC anomaly interaction settings
+-- @param npc The NPC object
+-- @param pathfinding Whether pathfinding around anomalies is enabled (unused currently)
+-- @param damage Whether anomaly damage is enabled
 function mai_npc_anomalies_interaction(npc, pathfinding, damage)
-	npc:set_enable_anomalies_damage(damage)
+    npc:set_enable_anomalies_damage(damage)
 end
 
+--- Subscribe an object to the anomaly evasion system
+-- @param obj The object to subscribe
+-- @param _type Object type ("npc")
+-- @param text Debug text to print
+-- @param force Force subscription even during surge
 function mai_subscribe(obj, _type, text, force)
-	if not mod_enable then return end
-	if not obj then return end
-	local cur_level = level.name()
-	if _type == "npc" then
-		if not obj:alive() then return end
-		if not force then
-			if surge_started() then
-				mai_npc_anomalies_interaction(obj, false, false)
-				return
-			end
-		end
-		if zz_allc0r3_mai_location_settings.mai_always_ignore_levels[cur_level] then
-			mai_npc_anomalies_interaction(obj, false, false)
-			return
-		end
-		if zz_allc0r3_mai_npc_settings.mai_always_full_ignore_community[obj:character_community()] then	
-			mai_npc_anomalies_interaction(obj, false, false)
-			return		
-		end
-		if zz_allc0r3_mai_npc_settings.mai_always_damage_ignore_community[obj:character_community()] then
-			mai_npc_anomalies_interaction(obj, false, true)
-			return			
-		end
-		if is_ignore_npc(obj) or
-		   is_companion_npc(obj) or
-		   is_task_npc(obj)
-		then
-			mai_npc_anomalies_interaction(obj, false, false)
-			return
-		end
-		if text then
-			_dbg_printf(text)
-		end
-		local id = obj:id()
-		mai_mob_session[id] = {}
-		mai_mob_session[id].added_restrictions = {}
-		mai_mob_session[id].last_position = get_npc_pos(obj)
-		mai_mob_session[id].custom_freq = 2000
-		mai_mob_session[id].detect_timer = time_global() + mai_mob_session[id].custom_freq
-		mai_mob_session[id].custom_miss_count_min = get_npc_settings(obj).chance_min
-		mai_mob_session[id].custom_miss_count_max = get_npc_settings(obj).chance_max
-		mai_mob_session[id].custom_miss_count_step = rd( mai_mob_session[id].custom_miss_count_min,  mai_mob_session[id].custom_miss_count_max)
-		mai_mob_session[id].custom_miss_count = 0
-		mai_mob_session[id].custom_detect_radius_min = get_npc_settings(obj).radius_min
-		mai_mob_session[id].custom_detect_radius_max = get_npc_settings(obj).radius_max
-		mai_mob_session[id].custom_detect_radius = rd( mai_mob_session[id].custom_detect_radius_min,  mai_mob_session[id].custom_detect_radius_max)
-		mai_mob_session[id].custom_position_step = mai_mob_session[id].custom_detect_radius/2
-		mai_mob_session[id].visual = obj:get_visual_name()
-		mai_mob_session[id].visual_settings = get_npc_visual_settings(mai_mob_session[id].visual)
-		mai_mob_session[id].subscribe = false
-		npc_count = npc_count + 1
-		mai_npc_anomalies_interaction(obj, false, true)
-		_dbg_printf("-[MAI][%s][mai_subscribe] [%s]SUBSCRIBE NPC [n = %s][miss_count_step = %s][detect_radius = %s]", sn, npc_count, obj:name(), mai_mob_session[id].custom_miss_count_step, mai_mob_session[id].custom_detect_radius)
-		if not mod_dbg then
-			printf("- SUB NPC [%s][%s]", npc_count, obj:name())
-		end
-	end
+    if not mod_enable then return end
+    if not obj then return end
+    
+    local cur_level = level.name()
+    
+    if _type == "npc" then
+        if not obj:alive() then return end
+        
+        -- Skip during surge unless forced
+        if not force then
+            if surge_started() then
+                mai_npc_anomalies_interaction(obj, false, false)
+                return
+            end
+        end
+        
+        -- Check if level should be ignored
+        if zz_allc0r3_mai_location_settings.mai_always_ignore_levels[cur_level] then
+            mai_npc_anomalies_interaction(obj, false, false)
+            return
+        end
+        
+        -- Check if community should be fully ignored
+        if zz_allc0r3_mai_npc_settings.mai_always_full_ignore_community[obj:character_community()] then
+            mai_npc_anomalies_interaction(obj, false, false)
+            return
+        end
+        
+        -- Check if community should ignore pathfinding but take damage
+        if zz_allc0r3_mai_npc_settings.mai_always_damage_ignore_community[obj:character_community()] then
+            mai_npc_anomalies_interaction(obj, false, true)
+            return
+        end
+        
+        -- Check for special NPC types that should be ignored
+        if is_ignore_npc(obj) or is_companion_npc(obj) or is_task_npc(obj) then
+            mai_npc_anomalies_interaction(obj, false, false)
+            return
+        end
+        
+        if text then
+            _dbg_printf(text)
+        end
+        
+        -- Initialize session data for this NPC
+        local id = obj:id()
+        local settings = get_npc_settings(obj)
+        
+        mai_mob_session[id] = {
+            added_restrictions = {},
+            last_position = get_npc_pos(obj),
+            custom_freq = 2000,
+            detect_timer = time_global() + 2000,
+            custom_miss_count_min = settings.chance_min,
+            custom_miss_count_max = settings.chance_max,
+            custom_miss_count_step = rd(settings.chance_min, settings.chance_max),
+            custom_miss_count = 0,
+            custom_detect_radius_min = settings.radius_min,
+            custom_detect_radius_max = settings.radius_max,
+            custom_detect_radius = rd(settings.radius_min, settings.radius_max),
+            visual = obj:get_visual_name(),
+            subscribe = false
+        }
+        
+        mai_mob_session[id].custom_position_step = mai_mob_session[id].custom_detect_radius / 2
+        mai_mob_session[id].visual_settings = get_npc_visual_settings(mai_mob_session[id].visual)
+        
+        npc_count = npc_count + 1
+        mai_npc_anomalies_interaction(obj, false, true)
+        
+        _dbg_printf("-[MAI][%s][mai_subscribe] [%s]SUBSCRIBE NPC [n = %s][miss_count_step = %s][detect_radius = %s]",
+            sn, npc_count, obj:name(), mai_mob_session[id].custom_miss_count_step, mai_mob_session[id].custom_detect_radius)
+        
+        if not mod_dbg then
+            printf("- SUB NPC [%s][%s]", npc_count, obj:name())
+        end
+    end
 end
 
+--- Unsubscribe an object from the anomaly evasion system
+-- @param obj The object to unsubscribe
+-- @param _type Object type ("npc" or "npc_serv")
+-- @param text Debug text to print
 function mai_unsubscribe(obj, _type, text)
-	if _type == "npc" or _type == "npc_serv" then
-		local id = obj:id()
-		if not mai_mob_session[id] then
-			return
-		end
-		if text then
-			_dbg_printf(text)
-		end
-		local t = mai_mob_session[id].added_restrictions
-		if t then
-			local del_rest = {}
-			local s, a_obj
-			for k, _ in pairs(t) do
-			   if k then
-				 ti(del_rest, k)
-			   end 
-			end
-			if tg(del_rest)>0 then
-				_dbg_printf("- [MAI][%s][mai_unsubscribe] REMOVE RESTR NPC [n = %s][%s]", sn, obj:name(), table.concat( del_rest, "," ))
-				obj:remove_restrictions("", tc( del_rest, "," ))
-			end
-		end
-		mai_mob_session[id] = nil
-		mai_npc_anomalies_interaction(obj, false, false)
-		npc_count = npc_count - 1
-		if npc_count < 0 then npc_count = 0 end
-		_dbg_printf("! [MAI][%s][mai_unsubscribe] UNSUBSCRIBE NPC [n = %s][npc_count = %s]", sn, obj:name(), npc_count)
-		if not mod_dbg then
-			printf("~ UNSUB NPC [%s][%s]", npc_count, obj:name())
-		end
-	end
+    if _type == "npc" or _type == "npc_serv" then
+        local id = obj:id()
+        
+        if not mai_mob_session[id] then
+            return
+        end
+        
+        if text then
+            _dbg_printf(text)
+        end
+        
+        -- Remove all added restrictions
+        local t = mai_mob_session[id].added_restrictions
+        if t then
+            local del_rest = {}
+            for k, _ in pairs(t) do
+                if k then
+                    ti(del_rest, k)
+                end
+            end
+            if tg(del_rest) > 0 then
+                _dbg_printf("- [MAI][%s][mai_unsubscribe] REMOVE RESTR NPC [n = %s][%s]",
+                    sn, obj:name(), tc(del_rest, ","))
+                obj:remove_restrictions("", tc(del_rest, ","))
+            end
+        end
+        
+        mai_mob_session[id] = nil
+        mai_npc_anomalies_interaction(obj, false, false)
+        npc_count = npc_count - 1
+        
+        if npc_count < 0 then
+            npc_count = 0
+        end
+        
+        _dbg_printf("! [MAI][%s][mai_unsubscribe] UNSUBSCRIBE NPC [n = %s][npc_count = %s]",
+            sn, obj:name(), npc_count)
+        
+        if not mod_dbg then
+            printf("~ UNSUB NPC [%s][%s]", npc_count, obj:name())
+        end
+    end
 end
 
+--- Check if an object is subscribed to the system
+-- @param obj The object to check
+-- @param _type Object type
+-- @return boolean True if subscribed
 function mai_subscribed(obj, _type)
-	if _type == "npc" then
-		local id = obj:id()
-		if mai_mob_session[id] then
-			return true
-		end
-	end
-	return false
+    if _type == "npc" then
+        local id = obj:id()
+        if mai_mob_session[id] then
+            return true
+        end
+    end
+    return false
 end
 
+--- Main evasion dispatcher
+-- @param obj The object to process
+-- @param _type Object type
 function mai_evade(obj, _type)
-	if _type == "npc" then
-		mai_evade_npc(obj)
-	end
+    if _type == "npc" then
+        mai_evade_npc(obj)
+    end
 end
 
+--- Process anomaly evasion for an NPC
+-- @param npc The NPC to process
 function mai_evade_npc(npc)
-	if not npc or  not npc:alive() then	
-		return
-	end
-	if not mai_subscribed(npc, "npc") then return end
-	local id = npc:id()
+    if not npc or not npc:alive() then
+        return
+    end
+    
+    if not mai_subscribed(npc, "npc") then
+        return
+    end
+    
+    local id = npc:id()
+    
+    -- Check timer
     if mai_mob_session[id].detect_timer >= time_global() then
         return
     end
     mai_mob_session[id].detect_timer = time_global() + mai_mob_session[id].custom_freq
-	if not mai_mob_session[id].subscribe then
-		mai_mob_session[id].subscribe = true
-	end
+    
+    if not mai_mob_session[id].subscribe then
+        mai_mob_session[id].subscribe = true
+    end
+    
+    -- Check if NPC has moved enough
     local cur_position = get_npc_pos(npc)
     local pre_position = mai_mob_session[id].last_position
+    
     if pre_position then
         if pre_position:distance_to(cur_position) < mai_mob_session[id].custom_position_step then
             return
         else
-            mai_mob_session[id].last_position = cur_position 
+            mai_mob_session[id].last_position = cur_position
         end
     else
         mai_mob_session[id].last_position = cur_position
     end
-    local restrictions = {} 
+    
+    -- Get nearby anomalies
+    local restrictions = {}
     for _, v in pairs(mob_get_all_nearest_not_ignore_anoms(npc, mai_mob_session[id].custom_detect_radius)) do
         if v then
             ti(restrictions, v)
         end
     end
+    
     local add_rest = {}
     local del_rest = {}
+    
     if tg(restrictions) > 0 then
+        -- Find restrictions to remove
         for k, _ in pairs(mai_mob_session[id].added_restrictions) do
-           if restrictions[k] then
+            if restrictions[k] then
                 restrictions[k] = nil
-           else
+            else
                 ti(del_rest, k)
-           end
+            end
         end
+        
+        -- Remove old restrictions
         if tg(del_rest) > 0 then
             for _, v in pairs(del_rest) do
                 mai_mob_session[id].added_restrictions[v] = nil
             end
-            local s = tc(del_rest,",")
-			_dbg_printf("-[MAI][%s][mai_evade_npc] DEL RESTR NPC [%s][%s]", sn, npc:name(), s)
-            npc:remove_restrictions( "", s )
+            local s = tc(del_rest, ",")
+            _dbg_printf("-[MAI][%s][mai_evade_npc] DEL RESTR NPC [%s][%s]", sn, npc:name(), s)
+            npc:remove_restrictions("", s)
         end
+        
+        -- Determine new restrictions (with chance to miss)
         for _, v in pairs(restrictions) do
             if not should_mob_miss_this_anomaly(npc:id()) then
                 ti(add_rest, v)
-			else
-				_dbg_printf("-[MAI][%s][mai_evade_npc] NPC MISS ANOMALY [%s][%s]", sn, npc:name(), v)
+            else
+                _dbg_printf("-[MAI][%s][mai_evade_npc] NPC MISS ANOMALY [%s][%s]", sn, npc:name(), v)
             end
         end
+        
+        -- Add new restrictions
         if tg(add_rest) > 0 then
             local s = tc(add_rest, ",")
             if npc:in_restrictions():len() + 1 + s:len() < 3072 then
-                npc:add_restrictions( "", s )
-				_dbg_printf("-[MAI][%s][mai_evade_npc] ADD RESTR NPC [%s][%s]", sn, npc:name(), s)
-                for _, v in ipairs( add_rest ) do
-                    mai_mob_session[id].added_restrictions[ v ] = true
+                npc:add_restrictions("", s)
+                _dbg_printf("-[MAI][%s][mai_evade_npc] ADD RESTR NPC [%s][%s]", sn, npc:name(), s)
+                for _, v in ipairs(add_rest) do
+                    mai_mob_session[id].added_restrictions[v] = true
                 end
-				 _dbg_show_anoms()
+                _dbg_show_anoms()
             else
+                -- Reduce detection parameters if restriction limit reached
                 mai_mob_session[id].custom_detect_radius = mai_mob_session[id].custom_detect_radius * 0.75
                 mai_mob_session[id].custom_freq = mai_mob_session[id].custom_freq * 0.75
                 mai_mob_session[id].detect_timer = time_global() + 200
             end
         end
-    end	
+    end
 end
 
+--------------------------------------------------------------------------------
+-- NPC Settings Functions
+--------------------------------------------------------------------------------
+
+--- Get NPC detection settings based on faction and rank
+-- @param npc The NPC object
+-- @return table Settings with radius_min, radius_max, chance_min, chance_max
 function get_npc_settings(npc)
-	local t = zz_allc0r3_mai_npc_settings.mai_npc_settings
-	local community = npc:character_community()
-	local rank = ranks.get_se_obj_rank_name(npc)
-	if not t[community] then
-		_dbg_printf("~[%s, %s]", community, t.base_c)
-		community = t.base_c
-	end
-	if not t[community][rank] then
-		_dbg_printf("~[%s, %s]", rank, t.base_r)
-		rank = t.base_r
-	end
-	_dbg_printf("~[%s, %s]", community, rank)
-	return t[community][rank]
+    local t = zz_allc0r3_mai_npc_settings.mai_npc_settings
+    local community = npc:character_community()
+    local rank = ranks.get_se_obj_rank_name(npc)
+    
+    if not t[community] then
+        _dbg_printf("~[%s, %s]", community, t.base_c)
+        community = t.base_c
+    end
+    
+    if not t[community][rank] then
+        _dbg_printf("~[%s, %s]", rank, t.base_r)
+        rank = t.base_r
+    end
+    
+    _dbg_printf("~[%s, %s]", community, rank)
+    return t[community][rank]
 end
 
+--- Get visual-based settings for NPC (armor-specific damage/ignore lists)
+-- @param npc_visual The visual name of the NPC
+-- @return table Visual settings
 function get_npc_visual_settings(npc_visual)
-	if mai_npc_settings_by_visual[npc_visual] then
-		return mai_npc_settings_by_visual[npc_visual]
-	else
-		if not mai_npc_settings_by_visual[npc_visual] then
-			mai_npc_settings_by_visual[npc_visual] = {}
-		end
-		if not mai_npc_settings_file:section_exist(npc_visual) then
-			mai_npc_settings_by_visual[npc_visual].standard = true
-			_dbg_printf("~[MAI][%s][get_npc_visual_settings] %s not exist in cfg(mai_visual_settings.ltx), set damage to standard", sn, npc_visual)
-		else
-			local t_ignore_string = mai_npc_settings_file:r_string(npc_visual,"ignore_list")
-			mai_npc_settings_by_visual[npc_visual].ignore = str_explode(t_ignore_string, ",")
-			local t_damage_string = mai_npc_settings_file:r_string(npc_visual,"damage_list")
-			local damage_temp_strs = str_explode(t_damage_string, ",")
-			mai_npc_settings_by_visual[npc_visual].damage = {}
-			for k, v in pairs(damage_temp_strs) do
-				if v then
-					local t = str_explode(v, "|")
-					mai_npc_settings_by_visual[npc_visual].damage[t[1]] = tonumber(t[2])
-					_dbg_printf("~[MAI][%s][get_npc_visual_settings] VISUAl[%s] DAMAGE MULT %s -> %s",sn, npc_visual, t[1], tonumber(t[2]))
-				end
-			end
-			mai_npc_settings_by_visual[npc_visual].standard = false			
-		end
-		return mai_npc_settings_by_visual[npc_visual]
-	end
+    if mai_npc_settings_by_visual[npc_visual] then
+        return mai_npc_settings_by_visual[npc_visual]
+    end
+    
+    mai_npc_settings_by_visual[npc_visual] = {}
+    
+    if not mai_npc_settings_file:section_exist(npc_visual) then
+        mai_npc_settings_by_visual[npc_visual].standard = true
+        _dbg_printf("~[MAI][%s][get_npc_visual_settings] %s not exist in cfg(mai_visual_settings.ltx), set damage to standard",
+            sn, npc_visual)
+    else
+        -- Parse ignore list
+        local t_ignore_string = mai_npc_settings_file:r_string(npc_visual, "ignore_list")
+        mai_npc_settings_by_visual[npc_visual].ignore = str_explode(t_ignore_string, ",")
+        
+        -- Parse damage multipliers
+        local t_damage_string = mai_npc_settings_file:r_string(npc_visual, "damage_list")
+        local damage_temp_strs = str_explode(t_damage_string, ",")
+        mai_npc_settings_by_visual[npc_visual].damage = {}
+        
+        for k, v in pairs(damage_temp_strs) do
+            if v then
+                local t = str_explode(v, "|")
+                mai_npc_settings_by_visual[npc_visual].damage[t[1]] = tonumber(t[2])
+                _dbg_printf("~[MAI][%s][get_npc_visual_settings] VISUAL[%s] DAMAGE MULT %s -> %s",
+                    sn, npc_visual, t[1], tonumber(t[2]))
+            end
+        end
+        mai_npc_settings_by_visual[npc_visual].standard = false
+    end
+    
+    return mai_npc_settings_by_visual[npc_visual]
 end
 
+--- Get damage multiplier for NPC based on visual and anomaly type
+-- @param mob The NPC object
+-- @param anomaly The anomaly object
+-- @return number Damage multiplier
 function get_npc_dmg_mult(mob, anomaly)
-	local id = mob:id()
-		if mai_mob_session[id].visual_settings.standard then return 1.0 end
-		for k, v in pairs(mai_mob_session[id].visual_settings.damage) do
-			if k and v then
-				 if sf(anomaly:name(), k) then
-					_dbg_printf("-[MAI][%s][get_npc_dmg_mult] NPC[%s] TAKE ANOM[%s, %s] DAMAGE MULTUPLY [%s]", sn, mob:name(), anomaly:name(), k, v)
-					return mai_mob_session[id].visual_settings.damage[k]
-				 end
-			end
-		end
-	return 1.0
+    local id = mob:id()
+    
+    if mai_mob_session[id].visual_settings.standard then
+        return 1.0
+    end
+    
+    for k, v in pairs(mai_mob_session[id].visual_settings.damage) do
+        if k and v then
+            if sf(anomaly:name(), k) then
+                _dbg_printf("-[MAI][%s][get_npc_dmg_mult] NPC[%s] TAKE ANOM[%s, %s] DAMAGE MULTIPLY [%s]",
+                    sn, mob:name(), anomaly:name(), k, v)
+                return mai_mob_session[id].visual_settings.damage[k]
+            end
+        end
+    end
+    
+    return 1.0
 end
 
+--- Check if NPC should ignore a specific anomaly based on visual settings
+-- @param mob The NPC object
+-- @param anomaly The anomaly object
+-- @return boolean True if should ignore
 function is_npc_ignore_anom(mob, anomaly)
-	local id = mob:id()
-		if mai_mob_session[id].visual_settings.standard then return false end
-		for _, v in pairs(mai_mob_session[id].visual_settings.ignore) do
-			if v then
-				 if sf(anomaly:name(), v) then
-					_dbg_printf("-[MAI][%s][is_npc_ignore_anom] NPC[%s] IGNORE ANOM[%s, %s]",sn, mob:name(), anomaly:name(), v)
-					return true
-				 end
-			end
-		end
-	return false
+    local id = mob:id()
+    
+    if mai_mob_session[id].visual_settings.standard then
+        return false
+    end
+    
+    for _, v in pairs(mai_mob_session[id].visual_settings.ignore) do
+        if v then
+            if sf(anomaly:name(), v) then
+                _dbg_printf("-[MAI][%s][is_npc_ignore_anom] NPC[%s] IGNORE ANOM[%s, %s]",
+                    sn, mob:name(), anomaly:name(), v)
+                return true
+            end
+        end
+    end
+    
+    return false
 end
 
-function surge_started() 
-	return surge_manager.is_loaded() and surge_manager.is_started() or 
-	psi_storm_manager.is_loaded() and psi_storm_manager.is_started() 
+--------------------------------------------------------------------------------
+-- NPC Check Functions
+--------------------------------------------------------------------------------
+
+--- Check if surge/psi-storm is active
+-- @return boolean True if surge is started
+function surge_started()
+    return (surge_manager.is_loaded() and surge_manager.is_started()) or
+           (psi_storm_manager.is_loaded() and psi_storm_manager.is_started())
 end
 
+--- Get NPC position (spine bone or offset from base position)
+-- @param npc The NPC object
+-- @return vector Position
 function get_npc_pos(npc)
     return utils_obj.safe_bone_pos(npc, "bip01_spine") or npc:position():add(vector():set(0, 0.4, 0))
 end
 
+--- Check if anomaly should always be skipped
+-- @param anomaly The anomaly object
+-- @return boolean True if should skip
 function is_always_skip_anomalies(anomaly)
-	local t = zz_allc0r3_mai_anomalies_settings.mai_always_ignore_anom
+    local t = zz_allc0r3_mai_anomalies_settings.mai_always_ignore_anom
+    
     for i = 1, tg(t) do
-		if anomaly:name() == t[i] then return true end
+        if anomaly:name() == t[i] then
+            return true
+        end
         if sf(anomaly:name(), t[i]) then
             return true
         end
     end
+    
     return false
 end
 
+--- Check if NPC is a task giver with active task
+-- @param npc The NPC object
+-- @return boolean True if task NPC
 function is_task_npc(npc)
-	local id = npc:id()
-		for k, v in pairs(mai_quest_mob_stor) do
-			if k and v then
-				if v == id then
-					_dbg_printf("-[MAI][%s][is_task_npc] FOUND TASK GIVER [%s][%s] - %s", sn, k, v, npc:name())
-					return true
-				end
-			end
-		end
-	return false
+    local id = npc:id()
+    
+    for k, v in pairs(mai_quest_mob_stor) do
+        if k and v then
+            if v == id then
+                _dbg_printf("-[MAI][%s][is_task_npc] FOUND TASK GIVER [%s][%s] - %s", sn, k, v, npc:name())
+                return true
+            end
+        end
+    end
+    
+    return false
 end
 
+--- Check if NPC should be ignored (traders, story NPCs, etc.)
+-- @param npc The NPC object
+-- @return boolean True if should ignore
 function is_ignore_npc(npc)
-	local id = npc:id()
-	if zz_allc0r3_mai_npc_settings.demonized_ignore_npc[npc:section()] or
-		zz_allc0r3_mai_npc_settings.demonized_ignore_npc[npc:profile_name()] or
-	   get_object_story_id(id) or
-	   IsTrader(mob)
-	then
-		_dbg_printf("~ [MAI][%s][is_ignore_npc] IGNORE NPC FOUND [%s, %s, %s]", sn, npc:name(), npc:section(), npc:profile_name())
-		return true
-	end
-	return false
+    local id = npc:id()
+    
+    if zz_allc0r3_mai_npc_settings.demonized_ignore_npc[npc:section()] or
+       zz_allc0r3_mai_npc_settings.demonized_ignore_npc[npc:profile_name()] or
+       get_object_story_id(id) or
+       IsTrader(npc) then
+        _dbg_printf("~ [MAI][%s][is_ignore_npc] IGNORE NPC FOUND [%s, %s, %s]",
+            sn, npc:name(), npc:section(), npc:profile_name())
+        return true
+    end
+    
+    return false
 end
 
+--- Check if NPC is a companion
+-- @param npc The NPC object
+-- @return boolean True if companion
 function is_companion_npc(npc)
-	return npc and npc:has_info("npcx_is_companion")
+    return npc and npc:has_info("npcx_is_companion")
 end
 
+--- Determine if NPC should miss detecting an anomaly (random chance)
+-- @param id NPC ID
+-- @return boolean True if should miss
 function should_mob_miss_this_anomaly(id)
     if mai_mob_session[id] then
         mai_mob_session[id].custom_miss_count = mai_mob_session[id].custom_miss_count + 1
+        
         if mai_mob_session[id].custom_miss_count >= mai_mob_session[id].custom_miss_count_step then
             mai_mob_session[id].custom_miss_count = 0
-            mai_mob_session[id].custom_miss_count_step = rd( mai_mob_session[id].custom_miss_count_min,  mai_mob_session[id].custom_miss_count_max)
+            mai_mob_session[id].custom_miss_count_step = rd(
+                mai_mob_session[id].custom_miss_count_min,
+                mai_mob_session[id].custom_miss_count_max
+            )
             return true
         end
     end
+    
     return false
 end
 
+--------------------------------------------------------------------------------
+-- Anomaly Detection Functions
+--------------------------------------------------------------------------------
+
+--- Get all nearby anomalies that shouldn't be ignored
+-- @param mob The NPC object
+-- @param radius Detection radius
+-- @return table List of anomaly names
 function mob_get_all_nearest_not_ignore_anoms(mob, radius)
     local t = {}
-    if not mob then return t end
-    if not radius then radius = 30 end
+    
+    if not mob then
+        return t
+    end
+    
+    if not radius then
+        radius = 30
+    end
+    
     local mob_pos = mob:position()
     local cur_level = level.name()
     local fields = bind_anomaly_field.fields_by_names
-    local anom, anom_pos, anom_level, data, damage_radius, dist
+    local anom, data, damage_radius, dist
+    
     for k, v in pairs(fields) do
         anom = alife_object(v.object:id())
+        
         if not is_always_skip_anomalies(anom) and not is_npc_ignore_anom(mob, anom) then
             data = utils_stpk.get_anom_zone_data(anom)
+            
             if data and data.shapes[1] and data.shapes[1].radius then
-				damage_radius = data.shapes[1].radius * data.shapes[1].radius
+                damage_radius = data.shapes[1].radius * data.shapes[1].radius
             else
-				_dbg_printf("! [MAI][%s][mob_get_all_nearest_not_ignore_anoms] NOT RADIUS FOR ANOM [%s, %s, %s]", sn, anom:name(), anom:section_name(), anom.id)
-				if not mod_dbg then
-					printf("! ANOMALY WITHOUT RADIUS [%s][%s]", cur_level, anom:name())
-				end
+                _dbg_printf("! [MAI][%s][mob_get_all_nearest_not_ignore_anoms] NO RADIUS FOR ANOM [%s, %s, %s]",
+                    sn, anom:name(), anom:section_name(), anom.id)
+                if not mod_dbg then
+                    printf("! ANOMALY WITHOUT RADIUS [%s][%s]", cur_level, anom:name())
+                end
                 damage_radius = 10
             end
+            
             dist = v.object:position():distance_to(mob_pos)
             if radius >= dist then
                 ti(t, anom:name())
             end
         end
     end
-    return t  
+    
+    return t
 end
 
+--------------------------------------------------------------------------------
+-- Task Manager Integration
+--------------------------------------------------------------------------------
+
+--- Called when a task is given - protect the task giver
+-- @param task_giver_id ID of the NPC giving the task
+-- @param task_id ID of the task
 function tm_give_task(task_giver_id, task_id)
-	if task_giver_id then
-		local npc = level.object_by_id(task_giver_id)
-		if npc then
-			if  is_ignore_npc(npc) or
-				zz_allc0r3_mai_npc_settings.mai_always_damage_ignore_community[npc:character_community()]  or
-				zz_allc0r3_mai_npc_settings.mai_always_full_ignore_community[npc:character_community()] then
-				return
-			end
-			
-			if not mai_quest_mob_stor[task_id] then
-				mai_quest_mob_stor[task_id] = {}
-			end
-			mai_quest_mob_stor[task_id] = task_giver_id
-			_dbg_printf("-[MAI][%s][tm_give_task] SAVE TASK GIVER [%s][%s] - %s", sn, task_giver_id, npc:id(), npc:name())
-			if mai_subscribed(npc, "npc") then
-				mai_unsubscribe(npc, "npc", "~[MAI]["..sn.."][tm_give_task] TRY UNSUBSCRIBE NPC ["..npc:name().."]")		
-			end
-		end
-	end
+    if task_giver_id then
+        local npc = level.object_by_id(task_giver_id)
+        
+        if npc then
+            if is_ignore_npc(npc) or
+               zz_allc0r3_mai_npc_settings.mai_always_damage_ignore_community[npc:character_community()] or
+               zz_allc0r3_mai_npc_settings.mai_always_full_ignore_community[npc:character_community()] then
+                return
+            end
+            
+            if not mai_quest_mob_stor[task_id] then
+                mai_quest_mob_stor[task_id] = {}
+            end
+            
+            mai_quest_mob_stor[task_id] = task_giver_id
+            _dbg_printf("-[MAI][%s][tm_give_task] SAVE TASK GIVER [%s][%s] - %s",
+                sn, task_giver_id, npc:id(), npc:name())
+            
+            if mai_subscribed(npc, "npc") then
+                mai_unsubscribe(npc, "npc", "~[MAI][" .. sn .. "][tm_give_task] TRY UNSUBSCRIBE NPC [" .. npc:name() .. "]")
+            end
+        end
+    end
 end
 
+--- Called when a task is completed - remove protection
+-- @param task_id ID of the completed task
 function tm_complete_task(task_id)
-	if task_id and mai_quest_mob_stor[task_id] then
-		mai_quest_mob_stor[task_id] = nil
-	end
+    if task_id and mai_quest_mob_stor[task_id] then
+        mai_quest_mob_stor[task_id] = nil
+    end
 end
 
+--- Called when a task fails - remove protection
+-- @param task_id ID of the failed task
 function tm_fail_task(task_id)
-	if task_id and mai_quest_mob_stor[task_id] then
-		mai_quest_mob_stor[task_id] = nil
-	end
+    if task_id and mai_quest_mob_stor[task_id] then
+        mai_quest_mob_stor[task_id] = nil
+    end
 end
 
+--------------------------------------------------------------------------------
+-- Debug Functions
+--------------------------------------------------------------------------------
+
+--- Debug print wrapper
+-- @param str Format string
+-- @param ... Format arguments
 function _dbg_printf(str, ...)
-	if mod_dbg then
-		printf(str, ...)
-	end
+    if mod_dbg then
+        printf(str, ...)
+    end
 end
 
 local show = false
+
+--- Get level name for a server object
+-- @param s_obj Server object
+-- @return string Level name
 function sim_object_level_name(s_obj)
     return alife():level_name(game_graph():vertex(s_obj.m_game_vertex_id):level_id())
 end
 
+--- Show anomalies on map (debug)
 function _dbg_show_anoms()
-	if mod_dbg and not show then
-		for i = 1, 65534 do
-			local obj = alife():object(i)
-			if obj and IsAnomaly(obj) then
-				if sim_object_level_name(obj) == level.name() and not is_always_skip_anomalies(obj) then
-					if (level.map_has_object_spot(i, "anomaly_disabled") ~= 0) then
-						level.map_remove_object_spot(i, "anomaly_disabled")
-					end
-					level.map_add_object_spot_ser(i, "anomaly_disabled", "Name: "..obj:name().." \\nSection: "..obj:section_name())
-				end
-			end
-		end
-		show = true
-	end
+    if mod_dbg and not show then
+        for i = 1, 65534 do
+            local obj = alife():object(i)
+            
+            if obj and IsAnomaly(obj) then
+                if sim_object_level_name(obj) == level.name() and not is_always_skip_anomalies(obj) then
+                    if level.map_has_object_spot(i, "anomaly_disabled") ~= 0 then
+                        level.map_remove_object_spot(i, "anomaly_disabled")
+                    end
+                    level.map_add_object_spot_ser(i, "anomaly_disabled",
+                        "Name: " .. obj:name() .. " \\nSection: " .. obj:section_name())
+                end
+            end
+        end
+        show = true
+    end
 end
 
+--------------------------------------------------------------------------------
+-- Batch Operations
+--------------------------------------------------------------------------------
+
+--- Placeholder for MCM option changes
 function on_option_change()
-
+    -- Reserved for future MCM integration
 end
 
+--- Unsubscribe all NPCs from the system
 function mai_unsubscribe_all()
-	if mai_mob_session then
-		for k, v in pairs(mai_mob_session) do
-			local obj = level.object_by_id(k)
-			if obj then
-				mai_unsubscribe(obj, "npc", "~[MAI]["..sn.."][mai_unsubscribe_all] TRY UNSUBSCRIBE NPC ["..obj:name().."]")
-			else
-				printf("![MAI][%s][mai_unsubscribe_all] TRASH IN mai_mob_session[%s] - REMOVE", sn, k)
-				mai_mob_session[k] = nil
-				npc_count = npc_count - 1
-			end
-		end
-		--mai_mob_session = nil
-		--mai_mob_session = {}
-		--npc_count = 0
-	end
-	printf("-[MAI][%s][mai_unsubscribe_all] ALL NPC UNSUB DONE[%s]", sn, npc_count)
+    if mai_mob_session then
+        for k, v in pairs(mai_mob_session) do
+            local obj = level.object_by_id(k)
+            
+            if obj then
+                mai_unsubscribe(obj, "npc", "~[MAI][" .. sn .. "][mai_unsubscribe_all] TRY UNSUBSCRIBE NPC [" .. obj:name() .. "]")
+            else
+                printf("![MAI][%s][mai_unsubscribe_all] TRASH IN mai_mob_session[%s] - REMOVE", sn, k)
+                mai_mob_session[k] = nil
+                npc_count = npc_count - 1
+            end
+        end
+    end
+    
+    printf("-[MAI][%s][mai_unsubscribe_all] ALL NPC UNSUB DONE[%s]", sn, npc_count)
 end
 
+--- Subscribe all online stalkers to the system
 function mai_subscribe_all()
-	if not (db.OnlineStalkers) then
-		return
-	end
-	for i,v in ipairs(db.OnlineStalkers) do 
-		if (v) then 
-			local npc = level.object_by_id(v)
-			if npc and npc:alive() then
-				mai_subscribe(npc, "npc", "~[MAI]["..sn.."][mai_subscribe_all] TRY SUBSCRIBE NPC ["..npc:name().."]", true)
-			end
-		end
-	end
-	printf("-[MAI][%s][mai_unsubscribe_all] ALL NPC SUB DONE[%s]", sn, npc_count)
+    if not db.OnlineStalkers then
+        return
+    end
+    
+    for i, v in ipairs(db.OnlineStalkers) do
+        if v then
+            local npc = level.object_by_id(v)
+            
+            if npc and npc:alive() then
+                mai_subscribe(npc, "npc", "~[MAI][" .. sn .. "][mai_subscribe_all] TRY SUBSCRIBE NPC [" .. npc:name() .. "]", true)
+            end
+        end
+    end
+    
+    printf("-[MAI][%s][mai_subscribe_all] ALL NPC SUB DONE[%s]", sn, npc_count)
 end
 
+--------------------------------------------------------------------------------
+-- Event Handlers
+--------------------------------------------------------------------------------
+
+--- Handle actor interaction events (surge start/end)
+-- @param a Event category
+-- @param b Event parameter
+-- @param c Event type
 function actor_on_interaction(a, b, c)
-	if a == "anomalies" and (c == "emission_start" or c == "psi_storm_start") then
-		_dbg_printf("~[MAI][%s][actor_on_interaction] SURGE START [%s]", sn, c)
-		if zz_allc0r3_mai_callbacks.sleep_is_active == false then
-			mai_unsubscribe_all()
-		end
-	end
-	if a == "anomalies" and (c == "emission_end" or c == "psi_storm_end") then
-		_dbg_printf("~[MAI][%s][actor_on_interaction] SURGE END [%s]", sn, c)
-		if zz_allc0r3_mai_callbacks.sleep_is_active == false then
-			--mai_unsubscribe_all()
-			mai_subscribe_all()
-		end
-		show = false
-		_dbg_show_anoms()
-	end
+    if a == "anomalies" and (c == "emission_start" or c == "psi_storm_start") then
+        _dbg_printf("~[MAI][%s][actor_on_interaction] SURGE START [%s]", sn, c)
+        if zz_allc0r3_mai_callbacks.sleep_is_active == false then
+            mai_unsubscribe_all()
+        end
+    end
+    
+    if a == "anomalies" and (c == "emission_end" or c == "psi_storm_end") then
+        _dbg_printf("~[MAI][%s][actor_on_interaction] SURGE END [%s]", sn, c)
+        if zz_allc0r3_mai_callbacks.sleep_is_active == false then
+            mai_subscribe_all()
+        end
+        show = false
+        _dbg_show_anoms()
+    end
 end
 
+--- Handle sleep state changes
+-- @param sleep True if sleeping started, false if ended
 function actor_on_sleep_new(sleep)
-	if sleep then
-		_dbg_printf("~[MAI][%s][actor_on_sleep] SLEEP START [%s]", sn, sleep)
-		mai_unsubscribe_all()	
-	else
-		_dbg_printf("~[MAI][%s][actor_on_sleep] SLEEP END [%s]", sn, sleep)
-		--mai_unsubscribe_all()
-		mai_subscribe_all()	
-	end
+    if sleep then
+        _dbg_printf("~[MAI][%s][actor_on_sleep] SLEEP START [%s]", sn, sleep)
+        mai_unsubscribe_all()
+    else
+        _dbg_printf("~[MAI][%s][actor_on_sleep] SLEEP END [%s]", sn, sleep)
+        mai_subscribe_all()
+    end
 end
 
+--------------------------------------------------------------------------------
+-- Save/Load
+--------------------------------------------------------------------------------
+
+--- Load saved state
+-- @param mdata Save data table
 function load_state(mdata)
-	mai_quest_mob_stor = mdata.AllC0r3_mai_quest_mob_stor or {}
-end
-function save_state(mdata)
-	mdata.AllC0r3_mai_quest_mob_stor = mai_quest_mob_stor
+    mai_quest_mob_stor = mdata.AllC0r3_mai_quest_mob_stor or {}
 end
 
+--- Save current state
+-- @param mdata Save data table
+function save_state(mdata)
+    mdata.AllC0r3_mai_quest_mob_stor = mai_quest_mob_stor
+end
+
+--------------------------------------------------------------------------------
+-- Initialization
+--------------------------------------------------------------------------------
+
+--- Register all callbacks on game start
 function on_game_start()
-	RegisterScriptCallback("tm_give_task", tm_give_task)
-	RegisterScriptCallback("tm_complete_task", tm_complete_task)
-	RegisterScriptCallback("tm_fail_task", tm_fail_task)
-	RegisterScriptCallback("load_state", load_state)
-	RegisterScriptCallback("save_state", save_state)
-	RegisterScriptCallback("on_option_change", on_option_change)
-	RegisterScriptCallback("actor_on_interaction", actor_on_interaction)
-	RegisterScriptCallback("actor_on_sleep_new", actor_on_sleep_new)
+    RegisterScriptCallback("tm_give_task", tm_give_task)
+    RegisterScriptCallback("tm_complete_task", tm_complete_task)
+    RegisterScriptCallback("tm_fail_task", tm_fail_task)
+    RegisterScriptCallback("load_state", load_state)
+    RegisterScriptCallback("save_state", save_state)
+    RegisterScriptCallback("on_option_change", on_option_change)
+    RegisterScriptCallback("actor_on_interaction", actor_on_interaction)
+    RegisterScriptCallback("actor_on_sleep_new", actor_on_sleep_new)
     on_option_change()
 end
-

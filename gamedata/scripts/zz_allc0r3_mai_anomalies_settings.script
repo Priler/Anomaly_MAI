@@ -1,145 +1,169 @@
+--[[
+    MAI Anomalies Settings - List of anomalies to always ignore
+    Part of MAI (Mutant/Anomaly Interaction) by AllC0r3
+    
+    This file contains anomalies that NPCs should always ignore.
+    Includes both section patterns and specific anomaly names.
+--]]
+
 mai_always_ignore_anom = {
-	--секции
-	--Жгучий пух
-	"burning_fuzz",
 
-	--Костры
-	"campfire",
-	"zone_emi",
-	
-	--Пси
-	"psychic",
-	
-	--Радиация
-	"zone_field_radioactive",
-	"zone_radioactive",
-	"radioactive",
-	
-	--Летающие
-	"fireball_",
-	
-	--Генераторы?
-	"generator_torrid",
-	"generator_dust",
-	"generator_electra",
-	"generator_dust_static",
-	
-	--Хваталка (видимо осталась в наследство)
-	"zone_hvatalka",
-	-- Лиана?
-	"zone_liana",
-	--Монолит
-	"zone_monolith",
-	
-	--
-	"zone_no_gravity",
-	"zone_teleport",
-	"spatial",
-	"zorius_atp_balls_smart_terrain_",
-	"zone_mine_field_soc",
-	"zone_mine_ghost",
-	"zone_mine_net",
-	"zone_mine_cdf",
-	"zone_mine_point",
-	"zone_mine_sloth",
-	"zone_mine_umbra",
-	"agr_torrid_zone",
-	"yan_tunnel_zone_zhar", --херня без радиуса
-	
-	--with out radius
-	"red_zone_mine_electric_weak",
-	"red_zone_mine_thermal_strong_0018",
-	"red_zone_mine_thermal_strong_0004",
-	"red_zone_mine_thermal_strong_0020",
-	"red_zone_mine_thermal_strong_0010",
-	"red_zone_mine_thermal_strong_0017",
-	"red_zone_mine_thermal_strong_0019",
-	"red_zone_mine_thermal_strong_0005",
-	"red_zone_mine_thermal_strong_0021",
-	"red_zone_mine_thermal_strong_0022",
-	"red_zone_mine_thermal_strong_0000",
-	"red_zone_mine_thermal_strong_0023",
-	"red_zone_mine_thermal_strong_0003",
-	
-	--имена
-	--Кордон. Поле между Северным КПП и Мостом, недалеко от запора
-	"esc_zone_mine_gravitational_weak_0025",
-	"esc_zone_mine_gravitational_weak_0028",
-	"esc_zone_mine_gravitational_weak_0029",
-	"esc_zone_mine_gravitational_weak_0030",
-	"esc_zone_mine_gravitational_weak_0031",
-	"esc_zone_mine_gravitational_weak_0032",
-	"esc_zone_mine_gravitational_weak_0033",
-	
-	--Кордон. Тепловоз
-	"esc_zone_mine_gravitational_weak_0015",
-	"esc_zone_mine_gravitational_weak_0016",
-	"esc_zone_mine_gravitational_weak_0017",
-	"esc_zone_mine_gravitational_weak_0018",
-	"esc_zone_mine_gravitational_weak_0019",
-	"esc_zone_mine_gravitational_weak_0020",
-	"esc_zone_mine_gravitational_weak_0021",
-	"esc_zone_mine_gravitational_weak_0022",
-	"esc_zone_mine_gravitational_weak_0023",
-	"esc_zone_mine_gravitational_weak_0034",
-	
-	--Кордон. Возле деревни
-	"esc_zone_mine_gravitational_weak_0000",
-	"esc_zone_mine_gravitational_weak_0001",
-	"esc_zone_mine_gravitational_weak_0002",
-	"esc_zone_mine_gravitational_weak_0003",
-	"esc_zone_mine_gravitational_weak_0004",
-	"esc_zone_mine_gravitational_weak_0005",
-	"esc_zone_mine_gravitational_weak_0006",
-	"esc_zone_mine_gravitational_weak_0007",
-	"esc_zone_mine_gravitational_weak_0008",
-	"esc_zone_mine_gravitational_weak_0009",
-	"esc_zone_mine_gravitational_weak_0010",
-	"esc_zone_mine_gravitational_weak_0011",
-	"esc_zone_mine_gravitational_weak_0012",
-	"esc_zone_mine_gravitational_weak_0013",
-	"esc_zone_mine_gravitational_weak_0014",
-	"esc_zone_mine_gravitational_weak_0026",
-	"esc_zone_mine_gravitational_weak_0024",
-	"esc_zone_mine_gravitational_weak_0027",
-
-	--Свалка. Кладбище техники. Часть жарок
-	"gar_zone_mine_thermal_conc_camp_15",
-	"gar_zone_mine_thermal_conc_camp_16",
-	"gar_zone_mine_thermal_conc_camp_17",
-	"gar_zone_mine_thermal_conc_camp_18",
-	"gar_zone_mine_thermal_conc_camp_19",
-	"gar_zone_mine_thermal_conc_camp_20",
-	"gar_zone_mine_thermal_conc_camp_21",
-	"gar_zone_mine_thermal_conc_camp_31",
-	"gar_zone_mine_thermal_conc_camp_27",
-	
-	--Свалка. Болото. Часть хим аномалий (чтобы был широкий безопасный проход между ними)
-	
-	--Дикая территория. Тунель с Жарками (чтобы шли прямой дорогой)
-	"ros_zone_mine_thermal_average_0002",
-	"ros_zone_mine_thermal_average_0004",
-	"ros_zone_mine_thermal_average_0006",
-	"ros_zone_mine_thermal_average_0007",
-	"ros_zone_mine_thermal_average_0010",
-	"ros_zone_mine_thermal_average_0011",
-	"ros_zone_mine_thermal_average_0012",
-	"ros_zone_mine_thermal_average_0013",
-
-	--АС. Летающие
-	"mil_torrid_zone",
-	--АС. Термическая
-	"mil_zone_mine_thermal_strong_0011",
-	"mil_zone_mine_thermal_strong_0012",
-	"mil_zone_mine_thermal_strong_0013",
-	"mil_zone_mine_thermal_strong_0014",
-	"mil_zone_mine_thermal_strong_0015",
-	"mil_zone_field_thermal_strong_1",
-	"mil_zone_mine_thermal_strong_0016",
-	"mil_zone_mine_thermal_strong_0017",
-	"mil_zone_mine_thermal_strong_0019",
-	"mil_zone_mine_thermal_strong_0021",
-	--АС. Жарка в доме на хуторке
-	"mil_zone_zharka_static_strong_0003",
-	--Нужно больше... Добавлю в след апдейте.
+    ----------------------------------------------------------------------------
+    -- ANOMALY SECTIONS (patterns that match multiple anomalies)
+    ----------------------------------------------------------------------------
+    
+    -- Burning Fuzz
+    "burning_fuzz",
+    
+    -- Campfires
+    "campfire",
+    "zone_emi",
+    
+    -- Psi anomalies
+    "psychic",
+    
+    -- Radiation zones
+    "zone_field_radioactive",
+    "zone_radioactive",
+    "radioactive",
+    
+    -- Flying anomalies (fireballs)
+    "fireball_",
+    
+    -- Generators
+    "generator_torrid",
+    "generator_dust",
+    "generator_electra",
+    "generator_dust_static",
+    
+    -- Grabber (legacy anomaly)
+    "zone_hvatalka",
+    
+    -- Liana
+    "zone_liana",
+    
+    -- Monolith zones
+    "zone_monolith",
+    
+    -- Special zones
+    "zone_no_gravity",
+    "zone_teleport",
+    "spatial",
+    "zorius_atp_balls_smart_terrain_",
+    "zone_mine_field_soc",
+    "zone_mine_ghost",
+    "zone_mine_net",
+    "zone_mine_cdf",
+    "zone_mine_point",
+    "zone_mine_sloth",
+    "zone_mine_umbra",
+    "agr_torrid_zone",
+    "yan_tunnel_zone_zhar",  -- Bugged anomaly without radius
+    
+    ----------------------------------------------------------------------------
+    -- ANOMALIES WITHOUT RADIUS (must be ignored to prevent errors)
+    ----------------------------------------------------------------------------
+    
+    "red_zone_mine_electric_weak",
+    "red_zone_mine_thermal_strong_0018",
+    "red_zone_mine_thermal_strong_0004",
+    "red_zone_mine_thermal_strong_0020",
+    "red_zone_mine_thermal_strong_0010",
+    "red_zone_mine_thermal_strong_0017",
+    "red_zone_mine_thermal_strong_0019",
+    "red_zone_mine_thermal_strong_0005",
+    "red_zone_mine_thermal_strong_0021",
+    "red_zone_mine_thermal_strong_0022",
+    "red_zone_mine_thermal_strong_0000",
+    "red_zone_mine_thermal_strong_0023",
+    "red_zone_mine_thermal_strong_0003",
+    
+    ----------------------------------------------------------------------------
+    -- SPECIFIC ANOMALY NAMES (by location)
+    ----------------------------------------------------------------------------
+    
+    -- Cordon: Field between North Checkpoint and Bridge, near the dam
+    "esc_zone_mine_gravitational_weak_0025",
+    "esc_zone_mine_gravitational_weak_0028",
+    "esc_zone_mine_gravitational_weak_0029",
+    "esc_zone_mine_gravitational_weak_0030",
+    "esc_zone_mine_gravitational_weak_0031",
+    "esc_zone_mine_gravitational_weak_0032",
+    "esc_zone_mine_gravitational_weak_0033",
+    
+    -- Cordon: Locomotive area
+    "esc_zone_mine_gravitational_weak_0015",
+    "esc_zone_mine_gravitational_weak_0016",
+    "esc_zone_mine_gravitational_weak_0017",
+    "esc_zone_mine_gravitational_weak_0018",
+    "esc_zone_mine_gravitational_weak_0019",
+    "esc_zone_mine_gravitational_weak_0020",
+    "esc_zone_mine_gravitational_weak_0021",
+    "esc_zone_mine_gravitational_weak_0022",
+    "esc_zone_mine_gravitational_weak_0023",
+    "esc_zone_mine_gravitational_weak_0034",
+    
+    -- Cordon: Near the village
+    "esc_zone_mine_gravitational_weak_0000",
+    "esc_zone_mine_gravitational_weak_0001",
+    "esc_zone_mine_gravitational_weak_0002",
+    "esc_zone_mine_gravitational_weak_0003",
+    "esc_zone_mine_gravitational_weak_0004",
+    "esc_zone_mine_gravitational_weak_0005",
+    "esc_zone_mine_gravitational_weak_0006",
+    "esc_zone_mine_gravitational_weak_0007",
+    "esc_zone_mine_gravitational_weak_0008",
+    "esc_zone_mine_gravitational_weak_0009",
+    "esc_zone_mine_gravitational_weak_0010",
+    "esc_zone_mine_gravitational_weak_0011",
+    "esc_zone_mine_gravitational_weak_0012",
+    "esc_zone_mine_gravitational_weak_0013",
+    "esc_zone_mine_gravitational_weak_0014",
+    "esc_zone_mine_gravitational_weak_0026",
+    "esc_zone_mine_gravitational_weak_0024",
+    "esc_zone_mine_gravitational_weak_0027",
+    
+    -- Garbage: Vehicle graveyard - some burners
+    "gar_zone_mine_thermal_conc_camp_15",
+    "gar_zone_mine_thermal_conc_camp_16",
+    "gar_zone_mine_thermal_conc_camp_17",
+    "gar_zone_mine_thermal_conc_camp_18",
+    "gar_zone_mine_thermal_conc_camp_19",
+    "gar_zone_mine_thermal_conc_camp_20",
+    "gar_zone_mine_thermal_conc_camp_21",
+    "gar_zone_mine_thermal_conc_camp_31",
+    "gar_zone_mine_thermal_conc_camp_27",
+    
+    -- Garbage: Swamp - some chemical anomalies (to allow wide safe passage)
+    -- (Add specific anomaly names here if needed)
+    
+    -- Wild Territory: Tunnel with Burners (so NPCs walk straight through)
+    "ros_zone_mine_thermal_average_0002",
+    "ros_zone_mine_thermal_average_0004",
+    "ros_zone_mine_thermal_average_0006",
+    "ros_zone_mine_thermal_average_0007",
+    "ros_zone_mine_thermal_average_0010",
+    "ros_zone_mine_thermal_average_0011",
+    "ros_zone_mine_thermal_average_0012",
+    "ros_zone_mine_thermal_average_0013",
+    
+    -- Army Warehouses: Flying anomalies
+    "mil_torrid_zone",
+    
+    -- Army Warehouses: Thermal anomalies
+    "mil_zone_mine_thermal_strong_0011",
+    "mil_zone_mine_thermal_strong_0012",
+    "mil_zone_mine_thermal_strong_0013",
+    "mil_zone_mine_thermal_strong_0014",
+    "mil_zone_mine_thermal_strong_0015",
+    "mil_zone_field_thermal_strong_1",
+    "mil_zone_mine_thermal_strong_0016",
+    "mil_zone_mine_thermal_strong_0017",
+    "mil_zone_mine_thermal_strong_0019",
+    "mil_zone_mine_thermal_strong_0021",
+    
+    -- Army Warehouses: Burner inside house at the farmstead
+    "mil_zone_zharka_static_strong_0003",
+    
+    -- Need more... Will add in next update.
 }
