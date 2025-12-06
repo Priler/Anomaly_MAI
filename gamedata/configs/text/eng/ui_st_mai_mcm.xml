@@ -1,0 +1,109 @@
+<?xml version="1.0" encoding="windows-1251"?>
+<!--
+    MAI MCM Localization - English
+    Part of MAI (Mutant/Anomaly Interaction) by AllC0r3
+-->
+<string_table>
+    <!-- Menu Title -->
+    <string id="ui_mcm_menu_mai">
+        <text>MAI - NPC Anomaly Evasion</text>
+    </string>
+    <string id="ui_mcm_mai_title">
+        <text>MAI - Mutant/Anomaly Interaction\nNPC Anomaly Evasion System by AllC0r3</text>
+    </string>
+    
+    <!-- Section Titles -->
+    <string id="ui_mcm_mai_general_title">
+        <text>General Settings</text>
+    </string>
+    <string id="ui_mcm_mai_detection_title">
+        <text>Detection Settings</text>
+    </string>
+    <string id="ui_mcm_mai_performance_title">
+        <text>Performance Settings</text>
+    </string>
+    <string id="ui_mcm_mai_debug_title">
+        <text>Debug Settings</text>
+    </string>
+    
+    <!-- General Settings -->
+    <string id="ui_mcm_mai_mod_enabled">
+        <text>Enable MAI</text>
+    </string>
+    <string id="ui_mcm_mai_mod_enabled_desc">
+        <text>Enable or disable the entire MAI system. When disabled, NPCs will not evade anomalies.</text>
+    </string>
+    
+    <string id="ui_mcm_mai_debug_mode">
+        <text>Debug Mode</text>
+    </string>
+    <string id="ui_mcm_mai_debug_mode_desc">
+        <text>Enable debug mode to see detailed logging in the console. Useful for troubleshooting issues.</text>
+    </string>
+    
+    <!-- Detection Settings -->
+    <string id="ui_mcm_mai_base_detection_freq">
+        <text>Detection Frequency (ms)</text>
+    </string>
+    <string id="ui_mcm_mai_base_detection_freq_desc">
+        <text>How often NPCs check for nearby anomalies (in milliseconds). Lower values = more responsive but higher CPU usage. Default: 2000ms</text>
+    </string>
+    
+    <string id="ui_mcm_mai_enable_visual_damage_mult">
+        <text>Armor-based Damage</text>
+    </string>
+    <string id="ui_mcm_mai_enable_visual_damage_mult_desc">
+        <text>Enable armor-based damage multipliers. Different suits provide different protection against anomalies.</text>
+    </string>
+    
+    <!-- Performance Settings -->
+    <string id="ui_mcm_mai_max_restrictions_length">
+        <text>Max Restrictions Buffer</text>
+    </string>
+    <string id="ui_mcm_mai_max_restrictions_length_desc">
+        <text>Maximum length of the restriction string buffer. Higher values allow more anomalies to be tracked but may impact performance. Default: 3072</text>
+    </string>
+    
+    <string id="ui_mcm_mai_radius_reduction_factor">
+        <text>Radius Reduction Factor</text>
+    </string>
+    <string id="ui_mcm_mai_radius_reduction_factor_desc">
+        <text>When restriction limit is reached, detection radius is multiplied by this factor. Lower values = more aggressive reduction. Default: 0.75</text>
+    </string>
+    
+    <!-- Debug Settings -->
+    <string id="ui_mcm_mai_debug_show_anomalies_on_map">
+        <text>Show Anomalies on Map</text>
+    </string>
+    <string id="ui_mcm_mai_debug_show_anomalies_on_map_desc">
+        <text>Display detected anomalies as markers on the PDA map. Requires Debug Mode enabled.</text>
+    </string>
+    
+    <string id="ui_mcm_mai_debug_log_subscriptions">
+        <text>Log Subscriptions</text>
+    </string>
+    <string id="ui_mcm_mai_debug_log_subscriptions_desc">
+        <text>Log NPC subscribe/unsubscribe events to the console. Requires Debug Mode enabled.</text>
+    </string>
+    
+    <string id="ui_mcm_mai_debug_log_restrictions">
+        <text>Log Restrictions</text>
+    </string>
+    <string id="ui_mcm_mai_debug_log_restrictions_desc">
+        <text>Log anomaly restriction add/remove events to the console. Requires Debug Mode enabled.</text>
+    </string>
+    
+    <string id="ui_mcm_mai_debug_log_damage">
+        <text>Log Damage Events</text>
+    </string>
+    <string id="ui_mcm_mai_debug_log_damage_desc">
+        <text>Log anomaly damage events to the console. Requires Debug Mode enabled.</text>
+    </string>
+    
+    <string id="ui_mcm_mai_debug_log_detection">
+        <text>Log Detection Cycles</text>
+    </string>
+    <string id="ui_mcm_mai_debug_log_detection_desc">
+        <text>Log every detection cycle to the console. WARNING: Very verbose! Only enable for specific debugging. Requires Debug Mode enabled.</text>
+    </string>
+</string_table>
