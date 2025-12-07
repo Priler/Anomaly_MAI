@@ -1,9 +1,8 @@
 --[[
     MAI MCM Options - Mod Configuration Menu integration
-    Part of MAI (Mutant/Anomaly Interaction) by AllC0r3
+    Version: 3.0
     
-    This script provides MCM (Mod Configuration Menu) integration for MAI,
-    allowing users to configure the mod's behavior in-game.
+    Simplified configuration for the lightweight MAI system.
 --]]
 
 --------------------------------------------------------------------------------
@@ -16,51 +15,37 @@ local defaults = {
     debug_mode = false,
     
     -- Detection settings
-    base_detection_freq = 2000,         -- Base detection frequency in ms
-    min_position_step_divisor = 2,      -- Position step = radius / this value
+    base_detection_radius = 30,           -- How far NPCs can detect anomalies
+    max_restrictions_length = 2048,       -- Max restriction string length
     
     -- Damage settings
-    enable_visual_damage_mult = true,   -- Use armor-based damage multipliers
+    enable_visual_damage_mult = true,     -- Use armor-based damage multipliers
+    immune_zero_miss_chance = true,       -- NPCs with 0% miss chance are immune
     
-    -- Performance settings
-    max_restrictions_length = 3072,     -- Max restriction string length
-    radius_reduction_factor = 0.75,     -- Reduce radius by this factor when limit reached
-    freq_reduction_factor = 0.75,       -- Reduce frequency by this factor when limit reached
+    -- Movement state multipliers
+    -- Applied to base miss chance
+    -- Lower = less likely to miss, Higher = more likely to miss
+    standing_miss_multiplier = 0.3,       -- Standing still - very careful
+    walking_miss_multiplier = 0.6,        -- Walking - observing surroundings
+    running_miss_multiplier = 1.2,        -- Running - might miss some
+    combat_miss_multiplier = 3.0,         -- In combat - distracted
     
-    -- Movement state miss multipliers
-    -- Lower = less likely to miss anomalies, Higher = more likely to miss
-    standing_miss_multiplier = 0.3,     -- Standing still - very careful
-    walking_miss_multiplier = 0.6,      -- Walking - has time to observe
-    running_miss_multiplier = 1.2,      -- Running - might miss some
-    combat_miss_multiplier = 3.0,       -- In combat - distracted, misses more
-    
-    -- Rank-based miss chance (percentage chance to miss/walk into anomaly)
-    -- Based on z_npc_die_in_anomalies.script values
-    -- Higher = more likely to walk into anomalies
-    rank_novice_miss_chance = 100,      -- Novices always might miss
-    rank_trainee_miss_chance = 75,      -- Trainees often miss
-    rank_experienced_miss_chance = 50,  -- Experienced sometimes miss
-    rank_professional_miss_chance = 25, -- Professionals rarely miss
-    rank_veteran_miss_chance = 0,       -- Veterans never miss
-    rank_expert_miss_chance = 0,        -- Experts never miss
-    rank_master_miss_chance = 0,        -- Masters never miss
-    rank_legend_miss_chance = 0,        -- Legends never miss
-    
-    -- Debug settings
-    debug_show_anomalies_on_map = false,    -- Show detected anomalies on PDA map
-    debug_log_subscriptions = true,         -- Log NPC subscribe/unsubscribe events
-    debug_log_restrictions = true,          -- Log restriction add/remove events
-    debug_log_damage = true,                -- Log damage events
-    debug_log_detection = false,            -- Log every detection cycle (verbose!)
+    -- Rank-based miss chance (percentage)
+    -- Higher = more likely to walk into anomalies / take damage
+    rank_novice_miss_chance = 100,
+    rank_trainee_miss_chance = 75,
+    rank_experienced_miss_chance = 50,
+    rank_professional_miss_chance = 25,
+    rank_veteran_miss_chance = 0,
+    rank_expert_miss_chance = 0,
+    rank_master_miss_chance = 0,
+    rank_legend_miss_chance = 0,
 }
 
 --------------------------------------------------------------------------------
 -- MCM Helper Functions
 --------------------------------------------------------------------------------
 
---- Get cached MCM value or default
--- @param key Setting key
--- @return Setting value
 function get_config(key)
     if ui_mcm then
         return ui_mcm.get("mai/" .. key) or defaults[key]
@@ -68,86 +53,8 @@ function get_config(key)
     return defaults[key]
 end
 
---- Check if MCM is available
--- @return boolean True if MCM is available
 function mcm_available()
     return ui_mcm ~= nil
-end
-
---------------------------------------------------------------------------------
--- Public API - Called by other MAI scripts
---------------------------------------------------------------------------------
-
---- Check if mod is enabled
--- @return boolean
-function is_enabled()
-    return get_config("mod_enabled")
-end
-
---- Check if debug mode is enabled
--- @return boolean
-function is_debug()
-    return get_config("debug_mode")
-end
-
---- Get base detection frequency
--- @return number Frequency in milliseconds
-function get_detection_freq()
-    return get_config("base_detection_freq")
-end
-
---- Check if visual damage multipliers are enabled
--- @return boolean
-function use_visual_damage()
-    return get_config("enable_visual_damage_mult")
-end
-
---- Get max restrictions length
--- @return number
-function get_max_restrictions_length()
-    return get_config("max_restrictions_length")
-end
-
---- Get radius reduction factor
--- @return number
-function get_radius_reduction_factor()
-    return get_config("radius_reduction_factor")
-end
-
---- Get frequency reduction factor
--- @return number
-function get_freq_reduction_factor()
-    return get_config("freq_reduction_factor")
-end
-
---- Check if anomaly map markers should be shown
--- @return boolean
-function show_anomalies_on_map()
-    return get_config("debug_mode") and get_config("debug_show_anomalies_on_map")
-end
-
---- Check if subscription logging is enabled
--- @return boolean
-function log_subscriptions()
-    return get_config("debug_mode") and get_config("debug_log_subscriptions")
-end
-
---- Check if restriction logging is enabled
--- @return boolean
-function log_restrictions()
-    return get_config("debug_mode") and get_config("debug_log_restrictions")
-end
-
---- Check if damage logging is enabled
--- @return boolean
-function log_damage()
-    return get_config("debug_mode") and get_config("debug_log_damage")
-end
-
---- Check if detection logging is enabled (verbose)
--- @return boolean
-function log_detection()
-    return get_config("debug_mode") and get_config("debug_log_detection")
 end
 
 --------------------------------------------------------------------------------
@@ -164,7 +71,7 @@ function on_mcm_load()
                 type = "slide",
                 link = "ui_options_slider_player",
                 text = "ui_mcm_mai_title",
-                size = { 512, 50 },
+                size = {512, 50},
                 spacing = 20
             },
             
@@ -196,28 +103,14 @@ function on_mcm_load()
                 text = "ui_mcm_mai_detection_title"
             },
             {
-                id = "base_detection_freq",
+                id = "base_detection_radius",
                 type = "track",
                 val = 2,
-                min = 500,
-                max = 5000,
-                step = 100,
-                def = 2000,
-                hint = "mai_base_detection_freq",
-            },
-            {
-                id = "enable_visual_damage_mult",
-                type = "check",
-                val = 1,
-                def = true,
-                hint = "mai_enable_visual_damage_mult",
-            },
-            
-            -- Performance Settings
-            {
-                id = "performance",
-                type = "title",
-                text = "ui_mcm_mai_performance_title"
+                min = 10,
+                max = 50,
+                step = 5,
+                def = 30,
+                hint = "mai_base_detection_radius",
             },
             {
                 id = "max_restrictions_length",
@@ -226,21 +119,32 @@ function on_mcm_load()
                 min = 1024,
                 max = 4096,
                 step = 256,
-                def = 3072,
+                def = 2048,
                 hint = "mai_max_restrictions_length",
             },
+            
+            -- Damage Settings
             {
-                id = "radius_reduction_factor",
-                type = "track",
-                val = 2,
-                min = 0.5,
-                max = 0.95,
-                step = 0.05,
-                def = 0.75,
-                hint = "mai_radius_reduction_factor",
+                id = "damage",
+                type = "title",
+                text = "ui_mcm_mai_damage_title"
+            },
+            {
+                id = "enable_visual_damage_mult",
+                type = "check",
+                val = 1,
+                def = true,
+                hint = "mai_enable_visual_damage_mult",
+            },
+            {
+                id = "immune_zero_miss_chance",
+                type = "check",
+                val = 1,
+                def = true,
+                hint = "mai_immune_zero_miss_chance",
             },
             
-            -- Movement State Settings (NEW)
+            -- Movement State Settings
             {
                 id = "movement_state",
                 type = "title",
@@ -287,7 +191,7 @@ function on_mcm_load()
                 hint = "mai_combat_miss_multiplier",
             },
             
-            -- Rank-based Miss Chance Settings
+            -- Rank Settings
             {
                 id = "rank_settings",
                 type = "title",
@@ -373,48 +277,6 @@ function on_mcm_load()
                 def = 0,
                 hint = "mai_rank_legend_miss_chance",
             },
-            
-            -- Debug Settings (only shown when debug mode is enabled)
-            {
-                id = "debug_settings",
-                type = "title",
-                text = "ui_mcm_mai_debug_title"
-            },
-            {
-                id = "debug_show_anomalies_on_map",
-                type = "check",
-                val = 1,
-                def = false,
-                hint = "mai_debug_show_anomalies_on_map",
-            },
-            {
-                id = "debug_log_subscriptions",
-                type = "check",
-                val = 1,
-                def = true,
-                hint = "mai_debug_log_subscriptions",
-            },
-            {
-                id = "debug_log_restrictions",
-                type = "check",
-                val = 1,
-                def = true,
-                hint = "mai_debug_log_restrictions",
-            },
-            {
-                id = "debug_log_damage",
-                type = "check",
-                val = 1,
-                def = true,
-                hint = "mai_debug_log_damage",
-            },
-            {
-                id = "debug_log_detection",
-                type = "check",
-                val = 1,
-                def = false,
-                hint = "mai_debug_log_detection",
-            },
         }
     }
 end
@@ -424,7 +286,6 @@ end
 --------------------------------------------------------------------------------
 
 function on_game_start()
-    -- Register MCM menu if available
     if ui_mcm then
         RegisterScriptCallback("on_mcm_load", on_mcm_load)
     end

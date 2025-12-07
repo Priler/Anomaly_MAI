@@ -1,19 +1,18 @@
 --[[
     MAI (Mutant/Anomaly Interaction) by AllC0r3
-    Rework of ogse_anomaly_evader.script from OLR 3.0
-    Version: 2.1 (MCM Support + Arrival Compatibility)
+    Version: 3.0 - Performance Rewrite
     
     Features:
-    - NPC anomaly detection and evasion
-    - Faction/rank based detection settings
-    - Armor-based damage multipliers
-    - MCM configuration support
-    - Comprehensive debug logging
-    - Arrival mod compatibility (dynamic anomalies)
+    - Lightweight anomaly cache (rebuilt only after surge/psy-storm)
+    - Simple pathfinding restrictions (no per-NPC session tracking)
+    - Damage roll based on rank + movement state
+    - Arrival mod compatibility
     
-    CHANGES in 2.1:
-    - Debug map now shows only anomalies that NPCs can actually detect
-    - Added Arrival mod compatibility (respects dynamic anomaly enable/disable)
+    Design:
+    - Cache anomalies once after surge, reuse until next surge
+    - Single global update loop for all NPCs
+    - No subscribe/unsubscribe system
+    - Damage callback decides if NPC should take damage
 --]]
 
 --------------------------------------------------------------------------------
@@ -23,24 +22,27 @@
 local sf = string.find
 local ti = table.insert
 local tc = table.concat
-local tg = table.getn
-local sn = script_name()
 local rd = math.random
 
 --------------------------------------------------------------------------------
 -- Module variables
 --------------------------------------------------------------------------------
 
-local mai_npc_settings_file = ini_file("plugins\\mai\\mai_visual_settings.ltx")
+-- Anomaly cache - rebuilt after each surge/psy-storm
+local anomaly_cache = {}
+local cache_valid = false
+local cache_level = nil
 
-npc_count = 0
-mai_mob_session = {}
-mai_quest_mob_stor = {}
-mai_npc_settings_by_visual = {}
+-- Global update timer
+local global_update_timer = 0
+local UPDATE_INTERVAL = 2000 -- Check all NPCs every 2 seconds
 
--- Debug flag cache (updated from MCM)
+-- Debug flag cache
 local cached_debug_mode = false
 local cached_mod_enabled = true
+
+-- Track last restriction add time per NPC to avoid spam
+local npc_last_update = {}
 
 --------------------------------------------------------------------------------
 -- MCM Integration
@@ -66,530 +68,204 @@ local function update_mcm_cache()
 end
 
 --------------------------------------------------------------------------------
--- Debug Logging System
+-- Debug Logging
 --------------------------------------------------------------------------------
 
-function dbg_log(category, format, ...)
+local function dbg_log(category, format, ...)
     if not is_debug_enabled() then return end
     local msg = string.format(format, ...)
     printf("[%s][MAI][%s] %s", time_global(), category, msg)
-end
-
-function dbg_subscribe(format, ...)
-    if get_mcm_setting("debug_log_subscriptions", true) then
-        dbg_log("SUBSCRIBE", format, ...)
-    end
-end
-
-function dbg_restrict(format, ...)
-    if get_mcm_setting("debug_log_restrictions", true) then
-        dbg_log("RESTRICT", format, ...)
-    end
-end
-
-function dbg_damage(format, ...)
-    if get_mcm_setting("debug_log_damage", true) then
-        dbg_log("DAMAGE", format, ...)
-    end
-end
-
-function dbg_detect(format, ...)
-    if get_mcm_setting("debug_log_detection", false) then
-        dbg_log("DETECT", format, ...)
-    end
-end
-
-function _dbg_printf(str, ...)
-    if is_debug_enabled() then printf(str, ...) end
 end
 
 --------------------------------------------------------------------------------
 -- Arrival Mod Compatibility
 --------------------------------------------------------------------------------
 
--- Check if Arrival mod is loaded
+local arrival_checked = false
+local arrival_loaded = false
+
 local function is_arrival_loaded()
-    return drx_da_main ~= nil
+    if not arrival_checked then
+        arrival_loaded = arrival_zone_disable ~= nil and 
+                        arrival_zone_disable.zd_spawn and
+                        arrival_zone_disable.zd_spawn.zones_to_disable
+        arrival_checked = true
+    end
+    return arrival_loaded
 end
 
--- Get Arrival's anomaly properties for current level
-local function get_arrival_anomaly_properties(level_name)
-    if not is_arrival_loaded() then return nil end
-    if not drx_da_main.updated_anomaly_levels then return nil end
-    return drx_da_main.updated_anomaly_levels[level_name]
-end
-
--- Check if an Arrival anomaly is currently active/enabled
--- Checks both the properties table AND the actual game object state
-local function is_arrival_anomaly_active(anomaly_id, level_name)
-    local level_data = get_arrival_anomaly_properties(level_name)
-    if not level_data then return true end -- If no Arrival data, assume active
+local function is_arrival_anomaly_active(anom_id, level_name)
+    if not is_arrival_loaded() then return true end
     
-    -- Check if level anomalies are globally disabled
-    if level_data.disabled then
+    local zones_to_disable = arrival_zone_disable.zd_spawn.zones_to_disable
+    if not zones_to_disable then return true end
+    
+    local level_zones = zones_to_disable[level_name]
+    if not level_zones then return true end
+    
+    -- If anomaly ID is in the disable list, it's disabled
+    if level_zones[anom_id] then
         return false
     end
     
-    -- Check individual anomaly properties
-    if level_data.anomalies_properties and level_data.anomalies_properties[anomaly_id] then
-        local props = level_data.anomalies_properties[anomaly_id]
-        if props.active ~= nil and props.active == false then
-            return false
-        end
-    end
-    
-    -- Also check the actual game object if available
-    local g_obj = level.object_by_id(anomaly_id)
-    if g_obj and g_obj.anomaly_get_disable_time then
-        -- If anomaly has a disable time set, it's disabled
-        local disable_time = g_obj:anomaly_get_disable_time()
-        if disable_time and disable_time > 0 then
-            return false
-        end
-    end
-    
-    return true -- Default to active
+    return true
 end
 
--- Check if anomaly is an Arrival dynamic anomaly
-local function is_arrival_anomaly(anomaly_id, level_name)
-    local level_data = get_arrival_anomaly_properties(level_name)
-    if not level_data or not level_data.anomalies then return false end
+local function is_anomaly_enabled(anomaly_obj)
+    if not anomaly_obj then return false end
     
-    for _, id in pairs(level_data.anomalies) do
-        if id == anomaly_id then
-            return true
-        end
+    -- Check common anomaly disable methods
+    local cls = anomaly_obj:clsid()
+    
+    -- Try to check if anomaly is disabled via game flag
+    if anomaly_obj.disabled and anomaly_obj:disabled() then
+        return false
     end
-    return false
-end
-
--- Check if a game object anomaly is currently enabled
-local function is_anomaly_enabled(g_obj)
-    if not g_obj then return false end
     
-    -- Try to check if anomaly is disabled via game methods
-    if g_obj.anomaly_get_disable_time then
-        local disable_time = g_obj:anomaly_get_disable_time()
-        if disable_time and disable_time > 0 then
-            return false
-        end
+    -- Check if anomaly has no "online" state
+    local se_obj = alife_object(anomaly_obj:id())
+    if se_obj and se_obj.disabled then
+        return false
     end
     
     return true
 end
 
 --------------------------------------------------------------------------------
--- Core Functions
+-- Anomaly Cache System
 --------------------------------------------------------------------------------
 
-function mai_npc_anomalies_interaction(npc, pathfinding, damage)
-    npc:set_enable_anomalies_damage(damage)
-    dbg_detect("Set anomaly damage for NPC [%s]: %s", npc:name(), tostring(damage))
-end
-
-function mai_subscribe(obj, _type, text, force)
-    if not is_mod_enabled() then
-        dbg_subscribe("Mod disabled, skipping subscribe")
-        return
-    end
-    if not obj then return end
-    
-    local cur_level = level.name()
-    
-    if _type == "npc" then
-        if not obj:alive() then
-            dbg_subscribe("Skipping dead NPC [%s]", obj:name())
-            return
-        end
-        
-        -- Skip during surge unless forced
-        if not force and surge_started() then
-            dbg_subscribe("Surge active, skipping [%s]", obj:name())
-            mai_npc_anomalies_interaction(obj, false, false)
-            return
-        end
-        
-        -- Check if level should be ignored
-        if zz_allc0r3_mai_location_settings.mai_always_ignore_levels[cur_level] then
-            dbg_subscribe("Level [%s] ignored, skipping [%s]", cur_level, obj:name())
-            mai_npc_anomalies_interaction(obj, false, false)
-            return
-        end
-        
-        local community = obj:character_community()
-        
-        -- Check if community should be fully ignored
-        if zz_allc0r3_mai_npc_settings.mai_always_full_ignore_community[community] then
-            dbg_subscribe("Community [%s] fully ignored, skipping [%s]", community, obj:name())
-            mai_npc_anomalies_interaction(obj, false, false)
-            return
-        end
-        
-        -- Check if community should ignore pathfinding but take damage
-        if zz_allc0r3_mai_npc_settings.mai_always_damage_ignore_community[community] then
-            dbg_subscribe("Community [%s] damage-only, skipping evasion for [%s]", community, obj:name())
-            mai_npc_anomalies_interaction(obj, false, true)
-            return
-        end
-        
-        -- Check for special NPC types
-        if is_ignore_npc(obj) then
-            dbg_subscribe("NPC [%s] in ignore list", obj:name())
-            mai_npc_anomalies_interaction(obj, false, false)
-            return
-        end
-        
-        if is_companion_npc(obj) then
-            dbg_subscribe("NPC [%s] is companion", obj:name())
-            mai_npc_anomalies_interaction(obj, false, false)
-            return
-        end
-        
-        if is_task_npc(obj) then
-            dbg_subscribe("NPC [%s] is task giver", obj:name())
-            mai_npc_anomalies_interaction(obj, false, false)
-            return
-        end
-        
-        -- Initialize session data
-        local id = obj:id()
-        local settings = get_npc_settings(obj)
-        local base_freq = get_mcm_setting("base_detection_freq", 2000)
-        
-        mai_mob_session[id] = {
-            added_restrictions = {},
-            last_position = get_npc_pos(obj),
-            custom_freq = base_freq,
-            detect_timer = time_global() + base_freq,
-            custom_miss_count_min = settings.chance_min,
-            custom_miss_count_max = settings.chance_max,
-            custom_miss_count_step = rd(settings.chance_min, settings.chance_max),
-            custom_miss_count = 0,
-            custom_detect_radius_min = settings.radius_min,
-            custom_detect_radius_max = settings.radius_max,
-            custom_detect_radius = rd(settings.radius_min, settings.radius_max),
-            visual = obj:get_visual_name(),
-            subscribe = false
-        }
-        
-        mai_mob_session[id].custom_position_step = mai_mob_session[id].custom_detect_radius / 2
-        mai_mob_session[id].visual_settings = get_npc_visual_settings(mai_mob_session[id].visual)
-        
-        npc_count = npc_count + 1
-        mai_npc_anomalies_interaction(obj, false, true)
-        
-        dbg_subscribe("SUBSCRIBED [%s] - Count:%d Community:%s Rank:%s Radius:%.1f MissStep:%d",
-            obj:name(), npc_count, community,
-            ranks.get_se_obj_rank_name(obj) or "unknown",
-            mai_mob_session[id].custom_detect_radius,
-            mai_mob_session[id].custom_miss_count_step)
-        
-        if not is_debug_enabled() then
-            printf("- SUB NPC [%d][%s]", npc_count, obj:name())
-        end
-    end
-end
-
-function mai_unsubscribe(obj, _type, text)
-    if _type == "npc" or _type == "npc_serv" then
-        local id = obj:id()
-        
-        if not mai_mob_session[id] then
-            dbg_subscribe("NPC [%s] not subscribed", obj:name())
-            return
-        end
-        
-        -- Remove all added restrictions
-        local t = mai_mob_session[id].added_restrictions
-        if t then
-            local del_rest = {}
-            for k, _ in pairs(t) do
-                if k then ti(del_rest, k) end
-            end
-            if tg(del_rest) > 0 then
-                local rest_str = tc(del_rest, ",")
-                dbg_restrict("Removing %d restrictions from [%s]", tg(del_rest), obj:name())
-                obj:remove_restrictions("", rest_str)
-            end
-        end
-        
-        local rest_count = 0
-        for _ in pairs(mai_mob_session[id].added_restrictions) do rest_count = rest_count + 1 end
-        
-        mai_mob_session[id] = nil
-        mai_npc_anomalies_interaction(obj, false, false)
-        npc_count = npc_count - 1
-        if npc_count < 0 then npc_count = 0 end
-        
-        dbg_subscribe("UNSUBSCRIBED [%s] - Count:%d HadRestrictions:%d", obj:name(), npc_count, rest_count)
-        
-        if not is_debug_enabled() then
-            printf("~ UNSUB NPC [%d][%s]", npc_count, obj:name())
-        end
-    end
-end
-
-function mai_subscribed(obj, _type)
-    if _type == "npc" then
-        return mai_mob_session[obj:id()] ~= nil
-    end
-    return false
-end
-
-function mai_evade(obj, _type)
-    if _type == "npc" then
-        mai_evade_npc(obj)
-    end
-end
-
-function mai_evade_npc(npc)
-    if not npc or not npc:alive() then return end
-    if not mai_subscribed(npc, "npc") then return end
-    
-    local id = npc:id()
-    local session = mai_mob_session[id]
-    
-    -- Check timer
-    if session.detect_timer >= time_global() then return end
-    session.detect_timer = time_global() + session.custom_freq
-    
-    if not session.subscribe then
-        session.subscribe = true
-        dbg_detect("NPC [%s] first detection cycle", npc:name())
-    end
-    
-    -- Check movement
-    local cur_position = get_npc_pos(npc)
-    if session.last_position then
-        local dist = session.last_position:distance_to(cur_position)
-        if dist < session.custom_position_step then
-            dbg_detect("NPC [%s] hasn't moved enough (%.2f < %.2f)", npc:name(), dist, session.custom_position_step)
-            return
-        end
-    end
-    session.last_position = cur_position
-    
-    -- Get nearby anomalies
-    local nearby_anoms = mob_get_all_nearest_not_ignore_anoms(npc, session.custom_detect_radius)
-    local restrictions = {}
-    for _, v in pairs(nearby_anoms) do
-        if v then ti(restrictions, v) end
-    end
-    
-    local num_nearby = tg(restrictions)
-    dbg_detect("NPC [%s] found %d anomalies within %.1fm", npc:name(), num_nearby, session.custom_detect_radius)
-    
-    if num_nearby > 0 then
-        local add_rest = {}
-        local del_rest = {}
-        
-        -- Find restrictions to remove
-        for k, _ in pairs(session.added_restrictions) do
-            local still_nearby = false
-            for _, v in pairs(restrictions) do
-                if v == k then still_nearby = true break end
-            end
-            if not still_nearby then
-                ti(del_rest, k)
-            end
-        end
-        
-        -- Remove old restrictions
-        if tg(del_rest) > 0 then
-            for _, v in pairs(del_rest) do
-                session.added_restrictions[v] = nil
-            end
-            local s = tc(del_rest, ",")
-            dbg_restrict("NPC [%s] removing %d restrictions: %s", npc:name(), tg(del_rest), s)
-            npc:remove_restrictions("", s)
-        end
-        
-        -- Add new restrictions
-        for _, v in pairs(restrictions) do
-            if not session.added_restrictions[v] then
-                if not should_mob_miss_this_anomaly(id, npc) then
-                    ti(add_rest, v)
-                else
-                    dbg_detect("NPC [%s] MISSED anomaly [%s]", npc:name(), v)
-                end
-            end
-        end
-        
-        if tg(add_rest) > 0 then
-            local s = tc(add_rest, ",")
-            local max_len = get_mcm_setting("max_restrictions_length", 3072)
-            
-            if npc:in_restrictions():len() + 1 + s:len() < max_len then
-                npc:add_restrictions("", s)
-                dbg_restrict("NPC [%s] adding %d restrictions: %s", npc:name(), tg(add_rest), s)
-                for _, v in ipairs(add_rest) do
-                    session.added_restrictions[v] = true
-                end
-                
-                if get_mcm_setting("debug_show_anomalies_on_map", false) then
-                    _dbg_show_anoms()
-                end
-            else
-                local factor = get_mcm_setting("radius_reduction_factor", 0.75)
-                session.custom_detect_radius = session.custom_detect_radius * factor
-                session.custom_freq = session.custom_freq * factor
-                session.detect_timer = time_global() + 200
-                dbg_restrict("NPC [%s] hit limit! Reducing radius to %.1f", npc:name(), session.custom_detect_radius)
-            end
-        end
-    end
-end
-
---------------------------------------------------------------------------------
--- Settings Functions
---------------------------------------------------------------------------------
-
-function get_npc_settings(npc)
-    local t = zz_allc0r3_mai_npc_settings.mai_npc_settings
-    local community = npc:character_community()
-    local rank = ranks.get_se_obj_rank_name(npc)
-    
-    if not t[community] then
-        dbg_detect("Community [%s] not found, using [%s]", community, t.base_c)
-        community = t.base_c
-    end
-    if not t[community][rank] then
-        dbg_detect("Rank [%s] not found, using [%s]", rank, t.base_r)
-        rank = t.base_r
-    end
-    
-    return t[community][rank]
-end
-
-function get_npc_visual_settings(npc_visual)
-    if mai_npc_settings_by_visual[npc_visual] then
-        return mai_npc_settings_by_visual[npc_visual]
-    end
-    
-    mai_npc_settings_by_visual[npc_visual] = {}
-    
-    if not mai_npc_settings_file:section_exist(npc_visual) then
-        mai_npc_settings_by_visual[npc_visual].standard = true
-        dbg_detect("Visual [%s] not in config, using standard", npc_visual)
-    else
-        local ignore_str = mai_npc_settings_file:r_string(npc_visual, "ignore_list")
-        mai_npc_settings_by_visual[npc_visual].ignore = str_explode(ignore_str, ",")
-        
-        local damage_str = mai_npc_settings_file:r_string(npc_visual, "damage_list")
-        mai_npc_settings_by_visual[npc_visual].damage = {}
-        
-        for _, v in pairs(str_explode(damage_str, ",")) do
-            if v then
-                local t = str_explode(v, "|")
-                mai_npc_settings_by_visual[npc_visual].damage[t[1]] = tonumber(t[2])
-                dbg_detect("Visual [%s] damage: %s -> %.2f", npc_visual, t[1], tonumber(t[2]))
-            end
-        end
-        mai_npc_settings_by_visual[npc_visual].standard = false
-    end
-    
-    return mai_npc_settings_by_visual[npc_visual]
-end
-
-function get_npc_dmg_mult(mob, anomaly)
-    if not get_mcm_setting("enable_visual_damage_mult", true) then return 1.0 end
-    
-    local session = mai_mob_session[mob:id()]
-    if not session or session.visual_settings.standard then return 1.0 end
-    
-    for k, v in pairs(session.visual_settings.damage) do
-        if k and v and sf(anomaly:name(), k) then
-            dbg_damage("NPC [%s] damage mult for [%s]: %.2f", mob:name(), anomaly:name(), v)
-            return v
-        end
-    end
-    return 1.0
-end
-
-function is_npc_ignore_anom(mob, anomaly)
-    local session = mai_mob_session[mob:id()]
-    if not session or session.visual_settings.standard then return false end
-    
-    for _, v in pairs(session.visual_settings.ignore) do
-        if v and sf(anomaly:name(), v) then
-            dbg_detect("NPC [%s] ignoring [%s] (armor)", mob:name(), anomaly:name())
-            return true
-        end
-    end
-    return false
-end
-
---------------------------------------------------------------------------------
--- Check Functions
---------------------------------------------------------------------------------
-
-function surge_started()
-    return (surge_manager.is_loaded() and surge_manager.is_started()) or
-           (psi_storm_manager.is_loaded() and psi_storm_manager.is_started())
-end
-
-function get_npc_pos(npc)
-    return utils_obj.safe_bone_pos(npc, "bip01_spine") or npc:position():add(vector():set(0, 0.4, 0))
-end
-
-function is_always_skip_anomalies(anomaly)
+local function is_always_skip_anomaly(anom_name)
     local t = zz_allc0r3_mai_anomalies_settings.mai_always_ignore_anom
-    local name = anomaly:name()
-    for i = 1, tg(t) do
-        if name == t[i] or sf(name, t[i]) then return true end
+    for i = 1, #t do
+        if anom_name == t[i] or sf(anom_name, t[i]) then return true end
     end
     return false
 end
 
-function is_task_npc(npc)
-    local id = npc:id()
-    for _, v in pairs(mai_quest_mob_stor) do
-        if v == id then
-            dbg_subscribe("NPC [%s] is active task giver", npc:name())
-            return true
+local function rebuild_anomaly_cache()
+    anomaly_cache = {}
+    local level_name = level.name()
+    cache_level = level_name
+    
+    local fields = bind_anomaly_field.fields_by_names
+    if not fields then 
+        dbg_log("CACHE", "No anomaly fields found")
+        cache_valid = true
+        return 
+    end
+    
+    local count = 0
+    local skipped = 0
+    local arrival_loaded_now = is_arrival_loaded()
+    
+    for _, v in pairs(fields) do
+        local anom_obj = v.object
+        if anom_obj then
+            local anom_id = anom_obj:id()
+            local se_obj = alife_object(anom_id)
+            
+            if se_obj then
+                local anom_name = se_obj:name()
+                
+                -- Skip always-ignored anomalies
+                if is_always_skip_anomaly(anom_name) then
+                    skipped = skipped + 1
+                else
+                    -- Check Arrival mod
+                    local is_active = true
+                    if arrival_loaded_now then
+                        is_active = is_arrival_anomaly_active(anom_id, level_name)
+                    end
+                    
+                    if is_active then
+                        ti(anomaly_cache, {
+                            id = anom_id,
+                            name = anom_name,
+                            pos = anom_obj:position(),
+                            section = se_obj:section_name()
+                        })
+                        count = count + 1
+                    else
+                        skipped = skipped + 1
+                    end
+                end
+            end
         end
     end
-    return false
+    
+    cache_valid = true
+    dbg_log("CACHE", "Rebuilt anomaly cache: %d anomalies, %d skipped (level: %s)", count, skipped, level_name)
+    printf("[MAI] Anomaly cache rebuilt: %d anomalies on %s", count, level_name)
 end
 
-function is_ignore_npc(npc)
+local function invalidate_cache()
+    cache_valid = false
+    dbg_log("CACHE", "Cache invalidated")
+end
+
+local function ensure_cache()
+    local current_level = level.name()
+    if not cache_valid or cache_level ~= current_level then
+        rebuild_anomaly_cache()
+    end
+end
+
+--------------------------------------------------------------------------------
+-- NPC Checks
+--------------------------------------------------------------------------------
+
+local function is_ignore_npc(npc)
     local id = npc:id()
     local section = npc:section()
     local profile = npc:profile_name()
     
     if zz_allc0r3_mai_npc_settings.demonized_ignore_npc[section] then
-        dbg_subscribe("NPC [%s] ignored (section: %s)", npc:name(), section)
         return true
     end
     if zz_allc0r3_mai_npc_settings.demonized_ignore_npc[profile] then
-        dbg_subscribe("NPC [%s] ignored (profile: %s)", npc:name(), profile)
         return true
     end
     if get_object_story_id(id) then
-        dbg_subscribe("NPC [%s] has story ID", npc:name())
         return true
     end
     if IsTrader(npc) then
-        dbg_subscribe("NPC [%s] is trader", npc:name())
         return true
     end
     return false
 end
 
-function is_companion_npc(npc)
+local function is_companion_npc(npc)
     return npc and npc:has_info("npcx_is_companion")
 end
 
--- Get rank-based miss chance (percentage 0-100)
--- Based on z_npc_die_in_anomalies.script values
-local function get_rank_miss_chance(npc)
+local function should_ignore_npc(npc)
+    if not npc or not npc:alive() then return true end
+    if not IsStalker(npc) then return true end
+    
+    local community = npc:character_community()
+    
+    -- Check community ignore settings
+    if zz_allc0r3_mai_npc_settings.mai_always_full_ignore_community[community] then
+        return true
+    end
+    
+    if is_ignore_npc(npc) then return true end
+    if is_companion_npc(npc) then return true end
+    
+    return false
+end
+
+--------------------------------------------------------------------------------
+-- Rank and Movement State
+--------------------------------------------------------------------------------
+
+function get_rank_miss_chance(npc)
     if not npc then return 50 end
     
     local rank = ranks.get_se_obj_rank_name(npc)
     if not rank then rank = "novice" end
     
-    -- Map rank to MCM setting key
     local rank_settings = {
         ["novice"] = "rank_novice_miss_chance",
         ["trainee"] = "rank_trainee_miss_chance",
@@ -598,16 +274,10 @@ local function get_rank_miss_chance(npc)
         ["veteran"] = "rank_veteran_miss_chance",
         ["expert"] = "rank_expert_miss_chance",
         ["master"] = "rank_master_miss_chance",
-        ["legend"] = "rank_legend_miss_chance",
+        ["legend"] = "rank_legend_miss_chance"
     }
     
-    local setting_key = rank_settings[rank]
-    if setting_key then
-        return get_mcm_setting(setting_key, 50)
-    end
-    
-    -- Default fallback based on original values
-    local default_chances = {
+    local defaults = {
         ["novice"] = 100,
         ["trainee"] = 75,
         ["experienced"] = 50,
@@ -615,461 +285,291 @@ local function get_rank_miss_chance(npc)
         ["veteran"] = 0,
         ["expert"] = 0,
         ["master"] = 0,
-        ["legend"] = 0,
+        ["legend"] = 0
     }
     
-    return default_chances[rank] or 50
+    local setting_key = rank_settings[rank] or "rank_novice_miss_chance"
+    local default_val = defaults[rank] or 100
+    
+    return get_mcm_setting(setting_key, default_val)
 end
 
--- Get NPC movement/combat state multiplier for miss chance
--- Returns a multiplier: lower = less likely to miss, higher = more likely to miss
-local function get_npc_state_miss_multiplier(npc)
+local function get_movement_state_multiplier(npc)
     if not npc then return 1.0 end
     
-    -- Check if NPC is in combat
-    local best_enemy = npc:best_enemy()
-    if best_enemy then
-        -- In combat - much more likely to miss anomalies (distracted by fighting)
-        local combat_mult = get_mcm_setting("combat_miss_multiplier", 3.0)
-        dbg_detect("NPC [%s] in COMBAT - miss multiplier: %.1f", npc:name(), combat_mult)
-        return combat_mult
+    -- Combat check first (highest priority)
+    if npc:best_enemy() then
+        return get_mcm_setting("combat_miss_multiplier", 3.0)
     end
     
-    -- Check movement speed/state
-    local movement_type = npc:movement_type()
-    -- movement_type: move.stand = 0, move.walk = 1, move.run = 2
+    local movement = npc:movement_type()
     
-    if movement_type == move.stand then
-        -- Standing still - very unlikely to miss (careful observation)
-        local stand_mult = get_mcm_setting("standing_miss_multiplier", 0.3)
-        dbg_detect("NPC [%s] STANDING - miss multiplier: %.1f", npc:name(), stand_mult)
-        return stand_mult
-    elseif movement_type == move.walk then
-        -- Walking - less likely to miss (has time to observe)
-        local walk_mult = get_mcm_setting("walking_miss_multiplier", 0.6)
-        dbg_detect("NPC [%s] WALKING - miss multiplier: %.1f", npc:name(), walk_mult)
-        return walk_mult
-    elseif movement_type == move.run then
-        -- Running - normal chance to miss
-        local run_mult = get_mcm_setting("running_miss_multiplier", 1.2)
-        dbg_detect("NPC [%s] RUNNING - miss multiplier: %.1f", npc:name(), run_mult)
-        return run_mult
+    if movement == move.stand then
+        return get_mcm_setting("standing_miss_multiplier", 0.3)
+    elseif movement == move.walk then
+        return get_mcm_setting("walking_miss_multiplier", 0.6)
+    elseif movement == move.run then
+        return get_mcm_setting("running_miss_multiplier", 1.2)
     end
     
-    return 1.0 -- Default
+    return 1.0
 end
 
-function should_mob_miss_this_anomaly(id, npc)
-    local session = mai_mob_session[id]
-    if not session then return false end
+local function get_movement_state_name(npc)
+    if not npc then return "unknown" end
+    if npc:best_enemy() then return "combat" end
     
-    -- First check: Rank-based miss chance (percentage roll)
-    -- This is a direct percentage chance to miss, independent of the step system
-    -- Only applies to stalkers (human NPCs), not mutants
-    if npc and IsStalker(npc) then
-        local rank_chance = get_rank_miss_chance(npc)
-        if rank_chance > 0 then
-            local roll = rd(1, 100)
-            -- Using < to match original z_npc_die_in_anomalies.script behavior
-            if roll < rank_chance then
-                local rank = ranks.get_se_obj_rank_name(npc) or "unknown"
-                dbg_detect("NPC [%s] rank [%s] FAILED rank check (rolled %d < %d%%)", 
-                    npc:name(), rank, roll, rank_chance)
-                return true
+    local movement = npc:movement_type()
+    if movement == move.stand then return "standing"
+    elseif movement == move.walk then return "walking"
+    elseif movement == move.run then return "running"
+    end
+    return "unknown"
+end
+
+--------------------------------------------------------------------------------
+-- Pathfinding Restrictions
+--------------------------------------------------------------------------------
+
+local function get_nearby_anomalies(npc_pos, radius)
+    local result = {}
+    for _, anom in ipairs(anomaly_cache) do
+        local dist = anom.pos:distance_to(npc_pos)
+        if dist <= radius then
+            ti(result, anom.name)
+        end
+    end
+    return result
+end
+
+local function update_npc_restrictions(npc)
+    if should_ignore_npc(npc) then return end
+    
+    local id = npc:id()
+    local current_time = time_global()
+    
+    -- Throttle per-NPC updates
+    if npc_last_update[id] and current_time - npc_last_update[id] < 1000 then
+        return
+    end
+    npc_last_update[id] = current_time
+    
+    local npc_pos = npc:position()
+    local radius = get_mcm_setting("base_detection_radius", 30)
+    local nearby = get_nearby_anomalies(npc_pos, radius)
+    
+    if #nearby == 0 then return end
+    
+    -- Get current restrictions
+    local current_restrictions = npc:in_restrictions() or ""
+    local max_len = get_mcm_setting("max_restrictions_length", 2048)
+    
+    -- Find anomalies not already in restrictions
+    local to_add = {}
+    for _, anom_name in ipairs(nearby) do
+        if not sf(current_restrictions, anom_name) then
+            -- Roll for miss based on rank
+            local miss_chance = get_rank_miss_chance(npc)
+            local state_mult = get_movement_state_multiplier(npc)
+            local final_chance = math.floor(miss_chance * state_mult)
+            
+            if final_chance <= 0 or rd(1, 100) > final_chance then
+                -- NPC detects this anomaly (roll > chance means success)
+                ti(to_add, anom_name)
+            else
+                dbg_log("DETECT", "NPC [%s] missed anomaly [%s] (roll <= %d%%)", 
+                    npc:name(), anom_name, final_chance)
             end
-        elseif rank_chance == 0 then
-            -- Rank has 0% miss chance - never miss due to rank (veterans+)
-            dbg_detect("NPC [%s] rank has 0%% miss chance - guaranteed detection", npc:name())
+        end
+    end
+    
+    -- Add new restrictions
+    if #to_add > 0 then
+        local add_str = tc(to_add, ",")
+        if current_restrictions:len() + add_str:len() + 1 < max_len then
+            npc:add_restrictions("", add_str)
+            dbg_log("RESTRICT", "NPC [%s] added %d restrictions: %s", 
+                npc:name(), #to_add, add_str)
+        end
+    end
+end
+
+--------------------------------------------------------------------------------
+-- Damage System
+--------------------------------------------------------------------------------
+
+function should_npc_take_damage(npc, anomaly)
+    if not npc or not anomaly then return true end
+    
+    -- Always skip during surge
+    if surge_started() then
+        dbg_log("DAMAGE", "Surge active, blocking damage to [%s]", npc:name())
+        return false
+    end
+    
+    -- Check if anomaly should be skipped
+    local anom_name = anomaly:name()
+    if is_always_skip_anomaly(anom_name) then
+        return false
+    end
+    
+    -- Check community settings
+    local community = npc:character_community()
+    if zz_allc0r3_mai_npc_settings.mai_always_full_ignore_community[community] then
+        return false
+    end
+    
+    -- Companions don't take anomaly damage
+    if is_companion_npc(npc) then
+        return false
+    end
+    
+    -- Important NPCs don't take anomaly damage
+    if is_ignore_npc(npc) then
+        return false
+    end
+    
+    -- Immunity for 0% miss chance (veterans+)
+    if get_mcm_setting("immune_zero_miss_chance", true) then
+        local miss_chance = get_rank_miss_chance(npc)
+        if miss_chance == 0 then
+            dbg_log("DAMAGE", "NPC [%s] immune (0%% miss chance), blocking damage", npc:name())
             return false
         end
     end
     
-    -- Second check: Movement state modifier on step-based system
-    local state_mult = 1.0
-    if npc then
-        state_mult = get_npc_state_miss_multiplier(npc)
-    end
+    -- Roll for damage based on rank + state
+    local miss_chance = get_rank_miss_chance(npc)
+    local state_mult = get_movement_state_multiplier(npc)
+    local damage_chance = math.floor(miss_chance * state_mult)
     
-    -- Adjust miss step based on state
-    -- Lower multiplier = need more counts to miss = less likely to miss
-    -- Higher multiplier = need fewer counts to miss = more likely to miss
-    local adjusted_step = math.floor(session.custom_miss_count_step / state_mult)
-    if adjusted_step < 1 then adjusted_step = 1 end
+    -- Higher miss_chance = more likely to take damage
+    -- Novice running in combat: 100 * 3.0 = 300% (capped at 100) = always takes damage
+    -- Veteran standing: 0 * 0.3 = 0% = never takes damage
     
-    session.custom_miss_count = session.custom_miss_count + 1
-    if session.custom_miss_count >= adjusted_step then
-        session.custom_miss_count = 0
-        session.custom_miss_count_step = rd(session.custom_miss_count_min, session.custom_miss_count_max)
-        dbg_detect("NPC ID [%d] will miss anomaly (step: %d, adjusted: %d, mult: %.1f)", 
-            id, session.custom_miss_count_step, adjusted_step, state_mult)
-        return true
-    end
+    if damage_chance > 100 then damage_chance = 100 end
     
-    return false
-end
-
-function mob_get_all_nearest_not_ignore_anoms(mob, radius)
-    local t = {}
-    if not mob then return t end
-    radius = radius or 30
+    local roll = rd(1, 100)
+    local takes_damage = roll <= damage_chance
     
-    local mob_pos = mob:position()
-    local fields = bind_anomaly_field.fields_by_names
-    local checked, found, skipped = 0, 0, 0
-    local level_name = level.name()
-    local arrival_loaded = is_arrival_loaded()
+    local state = get_movement_state_name(npc)
+    local rank = ranks.get_se_obj_rank_name(npc) or "unknown"
     
-    for _, v in pairs(fields) do
-        checked = checked + 1
-        local anom_id = v.object:id()
-        local anom = alife_object(anom_id)
-        if anom and not is_always_skip_anomalies(anom) and not is_npc_ignore_anom(mob, anom) then
-            -- Check if Arrival anomaly is active
-            local is_active = true
-            if arrival_loaded then
-                is_active = is_arrival_anomaly_active(anom_id, level_name)
-            end
-            
-            -- Also check actual game object state
-            if is_active then
-                local g_obj = level.object_by_id(anom_id)
-                if g_obj and not is_anomaly_enabled(g_obj) then
-                    is_active = false
-                end
-            end
-            
-            if is_active then
-                local dist = v.object:position():distance_to(mob_pos)
-                if radius >= dist then
-                    ti(t, anom:name())
-                    found = found + 1
-                end
-            else
-                skipped = skipped + 1
-            end
-        end
-    end
-    
-    dbg_detect("Scanned %d fields, found %d anomalies, skipped %d disabled for [%s]", checked, found, skipped, mob:name())
-    return t
-end
-
---------------------------------------------------------------------------------
--- Task Manager Integration
---------------------------------------------------------------------------------
-
-function tm_give_task(task_giver_id, task_id)
-    if not task_giver_id then return end
-    
-    local npc = level.object_by_id(task_giver_id)
-    if npc then
-        if is_ignore_npc(npc) or
-           zz_allc0r3_mai_npc_settings.mai_always_damage_ignore_community[npc:character_community()] or
-           zz_allc0r3_mai_npc_settings.mai_always_full_ignore_community[npc:character_community()] then
-            dbg_log("TASK", "Task giver [%s] already ignored", npc:name())
-            return
-        end
-        
-        mai_quest_mob_stor[task_id] = task_giver_id
-        dbg_log("TASK", "Tracking task giver [%s] for task [%s]", npc:name(), task_id)
-        
-        if mai_subscribed(npc, "npc") then
-            dbg_log("TASK", "Unsubscribing task giver [%s]", npc:name())
-            mai_unsubscribe(npc, "npc")
-        end
-    end
-end
-
-function tm_complete_task(task_id)
-    if task_id and mai_quest_mob_stor[task_id] then
-        dbg_log("TASK", "Task [%s] completed", task_id)
-        mai_quest_mob_stor[task_id] = nil
-    end
-end
-
-function tm_fail_task(task_id)
-    if task_id and mai_quest_mob_stor[task_id] then
-        dbg_log("TASK", "Task [%s] failed", task_id)
-        mai_quest_mob_stor[task_id] = nil
-    end
-end
-
---------------------------------------------------------------------------------
--- Debug Display (FIXED: Now filters out disabled anomalies properly)
---------------------------------------------------------------------------------
-
-local show = false
-local show_timer = 0
-local SHOW_REFRESH_INTERVAL = 10000 -- Refresh map markers every 10 seconds
-
-function sim_object_level_name(s_obj)
-    return alife():level_name(game_graph():vertex(s_obj.m_game_vertex_id):level_id())
-end
-
-function _dbg_show_anoms()
-    if not is_debug_enabled() or not get_mcm_setting("debug_show_anomalies_on_map", false) then return end
-    
-    local tg = time_global()
-    
-    -- Allow refresh after interval
-    if show and tg < show_timer then return end
-    show_timer = tg + SHOW_REFRESH_INTERVAL
-    
-    local count = 0
-    local skipped_disabled = 0
-    local skipped_not_bound = 0
-    local level_name = level.name()
-    local arrival_loaded = is_arrival_loaded()
-    
-    -- Use original method: iterate all alife objects
-    for i = 1, 65534 do
-        local obj = alife():object(i)
-        if obj and IsAnomaly(obj) then
-            if sim_object_level_name(obj) == level_name and not is_always_skip_anomalies(obj) then
-                -- Check if anomaly is in bind_anomaly_field (actually loaded/active)
-                local is_bound = false
-                local field = nil
-                if bind_anomaly_field and bind_anomaly_field.fields_by_names then
-                    field = bind_anomaly_field.fields_by_names[obj:name()]
-                    is_bound = field ~= nil
-                end
-                
-                -- Check if Arrival anomaly is active
-                local is_active = true
-                if arrival_loaded then
-                    is_active = is_arrival_anomaly_active(i, level_name)
-                end
-                
-                -- Also check actual game object state
-                if is_bound and field and field.object then
-                    local g_obj = level.object_by_id(i)
-                    if g_obj and not is_anomaly_enabled(g_obj) then
-                        is_active = false
-                    end
-                end
-                
-                -- Remove old marker first
-                if level.map_has_object_spot(i, "anomaly_disabled") ~= 0 then
-                    level.map_remove_object_spot(i, "anomaly_disabled")
-                end
-                
-                if not is_bound then
-                    skipped_not_bound = skipped_not_bound + 1
-                elseif not is_active then
-                    skipped_disabled = skipped_disabled + 1
-                else
-                    -- Only show bound and active anomalies
-                    local marker_text = "Name: "..obj:name().." \\nSection: "..obj:section_name()
-                    
-                    if arrival_loaded and is_arrival_anomaly(i, level_name) then
-                        marker_text = marker_text .. "\\n[Arrival Dynamic]"
-                    end
-                    
-                    level.map_add_object_spot_ser(i, "anomaly_disabled", marker_text)
-                    count = count + 1
-                end
-            end
-        end
-    end
-    
-    dbg_log("MAP", "Added %d markers (skipped: %d disabled, %d not loaded)", count, skipped_disabled, skipped_not_bound)
-    show = true
-end
-
--- Force refresh of map markers
-function _dbg_refresh_anoms()
-    show = false
-    show_timer = 0
-    _dbg_show_anoms()
-end
-
---------------------------------------------------------------------------------
--- Batch Operations
---------------------------------------------------------------------------------
-
-function on_option_change()
-    update_mcm_cache()
-    dbg_log("CONFIG", "MCM options updated - Enabled:%s Debug:%s", tostring(cached_mod_enabled), tostring(cached_debug_mode))
-end
-
-function mai_unsubscribe_all()
-    local count = 0
-    for k, _ in pairs(mai_mob_session) do
-        local obj = level.object_by_id(k)
-        if obj then
-            mai_unsubscribe(obj, "npc")
-            count = count + 1
-        else
-            dbg_log("WARN", "Stale entry [%d] removed", k)
-            mai_mob_session[k] = nil
-            npc_count = npc_count - 1
-        end
-    end
-    dbg_log("BATCH", "Unsubscribed %d NPCs, total: %d", count, npc_count)
-    printf("-[MAI] All NPCs unsubscribed [%d]", npc_count)
-end
-
-function mai_subscribe_all()
-    if not db.OnlineStalkers then
-        dbg_log("BATCH", "No OnlineStalkers available")
-        return
-    end
-    
-    local count = 0
-    for _, v in ipairs(db.OnlineStalkers) do
-        if v then
-            local npc = level.object_by_id(v)
-            if npc and npc:alive() then
-                mai_subscribe(npc, "npc", nil, true)
-                count = count + 1
-            end
-        end
-    end
-    dbg_log("BATCH", "Subscribed %d NPCs, total: %d", count, npc_count)
-    printf("-[MAI] All NPCs subscribed [%d]", npc_count)
-end
-
---------------------------------------------------------------------------------
--- NPC Spawn/Destroy Handlers
---------------------------------------------------------------------------------
-
--- Called when any NPC spawns (including debug-spawned)
-function npc_on_net_spawn(npc, se_obj)
-    if not npc then return end
-    if not get_mcm_setting("mod_enabled", true) then return end
-    
-    -- Safety check - make sure we can access the NPC
-    local is_stalker = false
-    local success, err = pcall(function()
-        is_stalker = IsStalker(npc)
-    end)
-    
-    if not success then
-        dbg_log("SPAWN", "Error checking NPC type: %s", tostring(err))
-        return
-    end
-    
-    -- Only handle stalkers, not mutants (mutants have their own handler if needed)
-    if not is_stalker then return end
-    
-    -- Check if already subscribed
-    if mai_subscribed(npc, "npc") then return end
-    
-    -- Subscribe the NPC
-    mai_subscribe(npc, "npc", "net_spawn", true)
-    
-    local npc_name = "unknown"
-    pcall(function() npc_name = npc:name() end)
-    dbg_log("SPAWN", "NPC [%s] spawned and subscribed", npc_name)
-end
-
--- Called when NPC is destroyed from network
-function npc_on_net_destroy(npc)
-    if not npc then return end
-    
-    local id
-    local success = pcall(function() id = npc:id() end)
-    if not success or not id then return end
-    
-    if mai_mob_session[id] then
-        mai_unsubscribe(npc, "npc")
-        local npc_name = "unknown"
-        pcall(function() npc_name = npc:name() end)
-        dbg_log("SPAWN", "NPC [%s] destroyed and unsubscribed", npc_name)
-    end
-end
-
---------------------------------------------------------------------------------
--- Event Handlers
---------------------------------------------------------------------------------
-
-function actor_on_interaction(a, b, c)
-    if a == "anomalies" then
-        if c == "emission_start" or c == "psi_storm_start" then
-            dbg_log("EVENT", "Surge started [%s]", c)
-            if zz_allc0r3_mai_callbacks.sleep_is_active == false then
-                mai_unsubscribe_all()
-            end
-        elseif c == "emission_end" or c == "psi_storm_end" then
-            dbg_log("EVENT", "Surge ended [%s]", c)
-            if zz_allc0r3_mai_callbacks.sleep_is_active == false then
-                mai_subscribe_all()
-            end
-            show = false
-            _dbg_show_anoms()
-        end
-    end
-end
-
-function actor_on_sleep_new(sleep)
-    if sleep then
-        dbg_log("EVENT", "Player sleeping")
-        mai_unsubscribe_all()
+    if takes_damage then
+        dbg_log("DAMAGE", "NPC [%s] (rank: %s, state: %s) HIT by [%s] (roll: %d <= %d%%)", 
+            npc:name(), rank, state, anom_name, roll, damage_chance)
     else
-        dbg_log("EVENT", "Player woke up")
-        mai_subscribe_all()
+        dbg_log("DAMAGE", "NPC [%s] (rank: %s, state: %s) AVOIDED [%s] (roll: %d > %d%%)", 
+            npc:name(), rank, state, anom_name, roll, damage_chance)
+    end
+    
+    return takes_damage
+end
+
+function get_npc_dmg_mult(npc, anomaly)
+    if not npc then return 1.0 end
+    
+    -- Check if visual damage multipliers enabled
+    if not get_mcm_setting("enable_visual_damage_mult", true) then
+        return 1.0
+    end
+    
+    -- Get visual settings for this NPC's armor
+    local visual = npc:get_visual_name()
+    local visual_settings = zz_allc0r3_mai_npc_settings.mai_npc_settings
+    
+    if visual_settings then
+        for pattern, settings in pairs(visual_settings) do
+            if sf(visual, pattern) then
+                local anomaly_section = anomaly:section()
+                for anom_pattern, mult in pairs(settings.damage_mult or {}) do
+                    if sf(anomaly_section, anom_pattern) then
+                        return mult
+                    end
+                end
+                return settings.damage_mult_default or 1.0
+            end
+        end
+    end
+    
+    return 1.0
+end
+
+--------------------------------------------------------------------------------
+-- Surge Detection
+--------------------------------------------------------------------------------
+
+function surge_started()
+    return (surge_manager and surge_manager.is_loaded() and surge_manager.is_started()) or
+           (psi_storm_manager and psi_storm_manager.is_loaded() and psi_storm_manager.is_started())
+end
+
+--------------------------------------------------------------------------------
+-- Global Update Loop
+--------------------------------------------------------------------------------
+
+local function on_actor_update()
+    if not is_mod_enabled() then return end
+    if surge_started() then return end
+    
+    local current_time = time_global()
+    if current_time < global_update_timer then return end
+    
+    global_update_timer = current_time + UPDATE_INTERVAL
+    
+    -- Ensure cache is valid
+    ensure_cache()
+    
+    -- Update all online stalkers
+    local count = 0
+    for id, npc in pairs(db.OnlineStalkers) do
+        -- some mods store just the id here
+        if type(npc) == "number" then
+            npc = level.object_by_id(npc)
+        end
+
+        -- Skip anything that is still not a valid game object
+        if npc and npc.alive and npc:alive() and IsStalker(npc) then
+            update_npc_restrictions(npc)
+            count = count + 1
+        end
     end
 end
 
 --------------------------------------------------------------------------------
--- Save/Load
+-- Callbacks
 --------------------------------------------------------------------------------
 
-function load_state(mdata)
-    mai_quest_mob_stor = mdata.AllC0r3_mai_quest_mob_stor or {}
-    local count = 0
-    for _ in pairs(mai_quest_mob_stor) do count = count + 1 end
-    dbg_log("SAVE", "Loaded %d task givers", count)
+local function on_surge_end()
+    dbg_log("EVENT", "Surge ended, rebuilding cache")
+    invalidate_cache()
 end
 
-function save_state(mdata)
-    mdata.AllC0r3_mai_quest_mob_stor = mai_quest_mob_stor
-    local count = 0
-    for _ in pairs(mai_quest_mob_stor) do count = count + 1 end
-    dbg_log("SAVE", "Saved %d task givers", count)
+local function on_psy_storm_end()
+    dbg_log("EVENT", "Psy-storm ended, rebuilding cache")
+    invalidate_cache()
 end
 
---------------------------------------------------------------------------------
--- NPC Death by Anomaly Logging
---------------------------------------------------------------------------------
+local function on_game_load()
+    dbg_log("EVENT", "Game loaded, rebuilding cache")
+    invalidate_cache()
+    npc_last_update = {} -- Clear throttle tracking
+end
 
-function npc_on_death_callback_new(victim, killer)
-    if not victim then return end
-    
-    -- Safety wrapper for all operations
-    local success, err = pcall(function()
-        -- Check if killer is an anomaly
-        if killer and IsAnomaly(killer) then
-            local victim_name = victim:name() or "unknown"
-            local victim_rank = "unknown"
-            if IsStalker(victim) then
-                victim_rank = ranks.get_se_obj_rank_name(victim) or "unknown"
-            end
-            local killer_name = killer:name() or "unknown_anomaly"
-            local killer_section = killer:section() or "unknown"
-            
-            -- Always log anomaly deaths (useful info even without debug mode)
-            printf("[MAI] NPC [%s] (rank: %s) KILLED by anomaly [%s] (%s)", 
-                victim_name, victim_rank, killer_name, killer_section)
-            
-            -- Also log to debug if enabled
-            dbg_log("DEATH", "NPC [%s] (rank: %s) killed by anomaly [%s] section [%s]", 
-                victim_name, victim_rank, killer_name, killer_section)
-            
-            -- Check if this NPC was subscribed (means our detection failed or they intentionally walked in)
-            local id = victim:id()
-            if mai_mob_session[id] then
-                dbg_log("DEATH", "NPC [%s] was subscribed to MAI - detection may have failed", victim_name)
-                -- Clean up session
-                mai_mob_session[id] = nil
-                npc_count = npc_count - 1
-                if npc_count < 0 then npc_count = 0 end
-            end
-        end
-    end)
-    
-    if not success then
-        dbg_log("DEATH", "Error in death callback: %s", tostring(err))
+local function on_level_changed()
+    dbg_log("EVENT", "Level changed, invalidating cache")
+    invalidate_cache()
+    npc_last_update = {}
+end
+
+local function on_option_change()
+    update_mcm_cache()
+end
+
+-- Cleanup when NPC goes offline
+local function on_npc_net_destroy(npc)
+    if npc then
+        npc_last_update[npc:id()] = nil
     end
 end
 
@@ -1080,21 +580,18 @@ end
 function on_game_start()
     update_mcm_cache()
     
-    RegisterScriptCallback("tm_give_task", tm_give_task)
-    RegisterScriptCallback("tm_complete_task", tm_complete_task)
-    RegisterScriptCallback("tm_fail_task", tm_fail_task)
-    RegisterScriptCallback("load_state", load_state)
-    RegisterScriptCallback("save_state", save_state)
+    -- Core callbacks
+    RegisterScriptCallback("actor_on_update", on_actor_update)
     RegisterScriptCallback("on_option_change", on_option_change)
-    RegisterScriptCallback("actor_on_interaction", actor_on_interaction)
-    RegisterScriptCallback("actor_on_sleep_new", actor_on_sleep_new)
-    RegisterScriptCallback("npc_on_death_callback_new", npc_on_death_callback_new)
-    RegisterScriptCallback("npc_on_net_spawn", npc_on_net_spawn)
-    RegisterScriptCallback("npc_on_net_destroy", npc_on_net_destroy)
+    RegisterScriptCallback("npc_on_net_destroy", on_npc_net_destroy)
+    
+    -- Cache invalidation callbacks
+    RegisterScriptCallback("surge_manager_end_surge", on_surge_end)
+    RegisterScriptCallback("psi_storm_manager_end_storm", on_psy_storm_end)
+    RegisterScriptCallback("on_game_load", on_game_load)
+    RegisterScriptCallback("actor_on_first_update", on_game_load)
+    RegisterScriptCallback("actor_on_level_changed", on_level_changed)
     
     local arrival_status = is_arrival_loaded() and "detected" or "not detected"
-    dbg_log("INIT", "MAI v2.2 initialized - MCM:%s Debug:%s Arrival:%s", 
-        tostring(ui_mcm ~= nil), tostring(cached_debug_mode), arrival_status)
-    printf("-[MAI] Mutant/Anomaly Interaction v2.2 loaded (MCM: %s, Arrival: %s)", 
-        tostring(ui_mcm ~= nil), arrival_status)
+    printf("[MAI] v3.0 loaded (lightweight) - Arrival: %s", arrival_status)
 end

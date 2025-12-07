@@ -1,125 +1,65 @@
-local _dbg = zz_allc0r3_mai_main._dbg_printf
+--[[
+    MAI NPC Script - Damage handling
+    Version: 3.0
+    
+    This script handles:
+    - NPC damage from anomalies (decides if damage should apply)
+    - Damage multiplier based on armor
+--]]
+
 local sn = script_name()
 
-function mai_on_npc_net_spawn(npc, sobj)
-	zz_allc0r3_mai_main.mai_subscribe(npc, "npc", "~[MAI]["..sn.."][mai_on_npc_net_spawn] TRY SUBSCRIBE NPC ["..npc:name().."]")
+--------------------------------------------------------------------------------
+-- Damage Handler
+--------------------------------------------------------------------------------
+
+function mai_on_npc_before_hit(npc, shit, bone_id, flags)
+    if not npc then return end
+    
+    -- Only handle anomaly damage
+    if not IsAnomaly(shit.draftsman) then return end
+    
+    local anomaly = shit.draftsman
+    
+    -- Check if NPC should take damage
+    if not zz_allc0r3_mai_main.should_npc_take_damage(npc, anomaly) then
+        flags.ret_value = false
+        return
+    end
+    
+    -- Apply damage multiplier based on armor
+    shit.power = shit.power * zz_allc0r3_mai_main.get_npc_dmg_mult(npc, anomaly)
 end
 
-function mai_on_npc_update(npc, st)
-	zz_allc0r3_mai_main.mai_evade(npc, "npc")
+--------------------------------------------------------------------------------
+-- Death Logging
+--------------------------------------------------------------------------------
+
+function mai_on_npc_death(victim, killer)
+    if not victim then return end
+    
+    -- Only log anomaly deaths
+    if killer and IsAnomaly(killer) then
+        local victim_name = victim:name() or "unknown"
+        local victim_rank = "unknown"
+        
+        if IsStalker(victim) then
+            victim_rank = ranks.get_se_obj_rank_name(victim) or "unknown"
+        end
+        
+        local killer_name = killer:name() or "unknown_anomaly"
+        local killer_section = killer:section() or "unknown"
+        
+        printf("[MAI] NPC [%s] (rank: %s) KILLED by anomaly [%s] (%s)", 
+            victim_name, victim_rank, killer_name, killer_section)
+    end
 end
 
-function mai_on_npc_death(npc, who)
-	local killer_name = who and who:name() or "unknown"
-	zz_allc0r3_mai_main.mai_unsubscribe(npc, "npc", "~[MAI]["..sn.."][mai_on_npc_death] TRY UNSUBSCRIBE NPC ["..npc:name().."] WHO ["..killer_name.."]")
-end
-
-function mai_on_npc_net_destroy(npc)
-	zz_allc0r3_mai_main.mai_unsubscribe(npc, "npc", "~[MAI]["..sn.."][mai_on_npc_net_destroy] TRY UNSUBSCRIBE NPC ["..npc:name().."]")
-end
-
-function mai_on_npc_community_change(npc, comm)
-	zz_allc0r3_mai_main.mai_unsubscribe(npc, "npc", "~[MAI]["..sn.."][mai_on_npc_community_change] TRY UNSUBSCRIBE NPC ["..npc:name().."]")
-	zz_allc0r3_mai_main.mai_subscribe(npc, "npc", "~[MAI]["..sn.."][mai_on_npc_community_change] TRY SUBSCRIBE NPC ["..npc:name().."]")
-end
-
-function mai_on_npc_companion_change(npc, comp)
-	zz_allc0r3_mai_main.mai_unsubscribe(npc, "npc", "~[MAI]["..sn.."][mai_on_npc_companion_change] TRY UNSUBSCRIBE NPC ["..npc:name().."]")
-	zz_allc0r3_mai_main.mai_subscribe(npc, "npc", "~[MAI]["..sn.."][mai_on_npc_companion_change] TRY SUBSCRIBE NPC ["..npc:name().."]")
-end
-
---
-function mai_on_npc_visual_change(npc, vis)
-	zz_allc0r3_mai_main.mai_unsubscribe(npc, "npc", "~[MAI]["..sn.."][mai_on_npc_visual_change] TRY UNSUBSCRIBE NPC ["..npc:name().."]")
-	zz_allc0r3_mai_main.mai_subscribe(npc, "npc", "~[MAI]["..sn.."][mai_on_npc_visual_change] TRY SUBSCRIBE NPC ["..npc:name().."]")
-end
---
-
-function mai_on_npc_corpse_loot(npc, corpse_looting)
-	if corpse_looting then
-		zz_allc0r3_mai_main.mai_unsubscribe(npc, "npc", "~[MAI]["..sn.."][mai_on_npc_corpse_loot] TRY UNSUBSCRIBE NPC ["..npc:name().."]")
-	else
-		zz_allc0r3_mai_main.mai_subscribe(npc, "npc", "~[MAI]["..sn.."][mai_on_npc_corpse_loot] TRY SUBSCRIBE NPC ["..npc:name().."]")
-	end
-end
-
-function mai_on_npc_kill_wounded(npc, kill_wounded)
-	if kill_wounded then
-		zz_allc0r3_mai_main.mai_unsubscribe(npc, "npc", "~[MAI]["..sn.."][mai_on_npc_kill_wounded] TRY UNSUBSCRIBE NPC ["..npc:name().."]")
-	else
-		zz_allc0r3_mai_main.mai_subscribe(npc, "npc", "~[MAI]["..sn.."][mai_on_npc_kill_wounded] TRY SUBSCRIBE NPC ["..npc:name().."]")
-	end
-end
-
---[[
-function server_entity_on_unregister(se_obj)
-	zz_allc0r3_mai_main.mai_unsubscribe(se_obj, "npc_serv", "~[MAI]["..sn.."][server_entity_on_unregister] TRY UNSUBSCRIBE NPC ["..se_obj:name().."]")
-end]]
-
-function mai_on_npc_before_hit(npc,shit,bone_id,flags)
-	if not npc then return end
-	local cur_level = level.name()
-	if IsAnomaly(shit.draftsman) then
-		local anomaly = shit.draftsman
-		local id = npc:id()
-		if zz_allc0r3_mai_main.surge_started() then
-			flags.ret_value = false
-			_dbg("~[MAI][%s][mai_on_npc_before_hit] SURGE, DONT DAMAGE ANY NPC, %s", sn, anomaly:name())
-			return		
-		end
-		if zz_allc0r3_mai_main.is_always_skip_anomalies(anomaly) then
-			flags.ret_value = false
-			_dbg("~[MAI][%s][mai_on_npc_before_hit] IGNORE ANOMALY[%s], DONT DAMAGE", sn, anomaly:name())
-			return
-		end
-		if not zz_allc0r3_mai_main.mai_subscribed(npc, "npc") or (zz_allc0r3_mai_main.mai_mob_session[id] and zz_allc0r3_mai_main.mai_mob_session[id].subscribe == false)  then
-			flags.ret_value = false
-			_dbg("~[MAI][%s][mai_on_npc_before_hit] NOT SUBSCRIBED NPC[%s], DONT DAMAGE, %s", sn, npc:name(), anomaly:name())
-			return			
-		end
-		if zz_allc0r3_mai_main.is_npc_ignore_anom(npc, anomaly) then
-			flags.ret_value = false
-			_dbg("~[MAI][%s][mai_on_npc_before_hit] IGNORE THIS ANOM[%s], DONT DAMAGE, %s", sn, npc:name(), anomaly:name())
-			return					
-		end
-		
-		-- Get movement state for logging
-		local state_str = "unknown"
-		local in_combat = npc:best_enemy() ~= nil
-		if in_combat then
-			state_str = "COMBAT"
-		else
-			local movement_type = npc:movement_type()
-			if movement_type == move.stand then
-				state_str = "standing"
-			elseif movement_type == move.walk then
-				state_str = "walking"
-			elseif movement_type == move.run then
-				state_str = "running"
-			end
-		end
-		
-		-- Get rank for logging
-		local rank_str = "unknown"
-		if IsStalker(npc) then
-			rank_str = ranks.get_se_obj_rank_name(npc) or "unknown"
-		end
-		
-		_dbg("-[MAI][%s][mai_on_npc_before_hit] SUBSCRIBED NPC[%s] (rank: %s, state: %s), DAMAGED BY %s", sn, npc:name(), rank_str, state_str, anomaly:name())
-		shit.power = shit.power * zz_allc0r3_mai_main.get_npc_dmg_mult(npc, anomaly)
-	end
-end
+--------------------------------------------------------------------------------
+-- Initialization
+--------------------------------------------------------------------------------
 
 function on_game_start()
-	RegisterScriptCallback("npc_on_net_spawn",mai_on_npc_net_spawn)
-	RegisterScriptCallback("npc_on_net_destroy",mai_on_npc_net_destroy)
-	RegisterScriptCallback("npc_on_death_callback_new",mai_on_npc_death)
-	RegisterScriptCallback("npc_on_update",mai_on_npc_update)
-	RegisterScriptCallback("npc_on_before_hit", mai_on_npc_before_hit)
-	RegisterScriptCallback("npc_on_community_change", mai_on_npc_community_change)
-	RegisterScriptCallback("npc_on_companion_change", mai_on_npc_companion_change)
-	--RegisterScriptCallback("npc_on_visual_change", mai_on_npc_visual_change)
-	RegisterScriptCallback("npc_on_corpse_loot", mai_on_npc_corpse_loot)
-	RegisterScriptCallback("npc_on_kill_wounded", mai_on_npc_kill_wounded)
-	--RegisterScriptCallback("server_entity_on_unregister", server_entity_on_unregister)	
+    RegisterScriptCallback("npc_on_before_hit", mai_on_npc_before_hit)
+    RegisterScriptCallback("npc_on_death_callback", mai_on_npc_death)
 end
