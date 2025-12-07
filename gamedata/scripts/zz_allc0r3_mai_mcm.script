@@ -27,6 +27,25 @@ local defaults = {
     radius_reduction_factor = 0.75,     -- Reduce radius by this factor when limit reached
     freq_reduction_factor = 0.75,       -- Reduce frequency by this factor when limit reached
     
+    -- Movement state miss multipliers
+    -- Lower = less likely to miss anomalies, Higher = more likely to miss
+    standing_miss_multiplier = 0.3,     -- Standing still - very careful
+    walking_miss_multiplier = 0.6,      -- Walking - has time to observe
+    running_miss_multiplier = 1.2,      -- Running - might miss some
+    combat_miss_multiplier = 3.0,       -- In combat - distracted, misses more
+    
+    -- Rank-based miss chance (percentage chance to miss/walk into anomaly)
+    -- Based on z_npc_die_in_anomalies.script values
+    -- Higher = more likely to walk into anomalies
+    rank_novice_miss_chance = 100,      -- Novices always might miss
+    rank_trainee_miss_chance = 75,      -- Trainees often miss
+    rank_experienced_miss_chance = 50,  -- Experienced sometimes miss
+    rank_professional_miss_chance = 25, -- Professionals rarely miss
+    rank_veteran_miss_chance = 0,       -- Veterans never miss
+    rank_expert_miss_chance = 0,        -- Experts never miss
+    rank_master_miss_chance = 0,        -- Masters never miss
+    rank_legend_miss_chance = 0,        -- Legends never miss
+    
     -- Debug settings
     debug_show_anomalies_on_map = false,    -- Show detected anomalies on PDA map
     debug_log_subscriptions = true,         -- Log NPC subscribe/unsubscribe events
@@ -219,6 +238,140 @@ function on_mcm_load()
                 step = 0.05,
                 def = 0.75,
                 hint = "mai_radius_reduction_factor",
+            },
+            
+            -- Movement State Settings (NEW)
+            {
+                id = "movement_state",
+                type = "title",
+                text = "ui_mcm_mai_movement_title"
+            },
+            {
+                id = "standing_miss_multiplier",
+                type = "track",
+                val = 2,
+                min = 0.1,
+                max = 1.0,
+                step = 0.1,
+                def = 0.3,
+                hint = "mai_standing_miss_multiplier",
+            },
+            {
+                id = "walking_miss_multiplier",
+                type = "track",
+                val = 2,
+                min = 0.1,
+                max = 1.5,
+                step = 0.1,
+                def = 0.6,
+                hint = "mai_walking_miss_multiplier",
+            },
+            {
+                id = "running_miss_multiplier",
+                type = "track",
+                val = 2,
+                min = 0.5,
+                max = 2.0,
+                step = 0.1,
+                def = 1.2,
+                hint = "mai_running_miss_multiplier",
+            },
+            {
+                id = "combat_miss_multiplier",
+                type = "track",
+                val = 2,
+                min = 1.0,
+                max = 5.0,
+                step = 0.5,
+                def = 3.0,
+                hint = "mai_combat_miss_multiplier",
+            },
+            
+            -- Rank-based Miss Chance Settings
+            {
+                id = "rank_settings",
+                type = "title",
+                text = "ui_mcm_mai_rank_title"
+            },
+            {
+                id = "rank_novice_miss_chance",
+                type = "track",
+                val = 2,
+                min = 0,
+                max = 100,
+                step = 5,
+                def = 100,
+                hint = "mai_rank_novice_miss_chance",
+            },
+            {
+                id = "rank_trainee_miss_chance",
+                type = "track",
+                val = 2,
+                min = 0,
+                max = 100,
+                step = 5,
+                def = 75,
+                hint = "mai_rank_trainee_miss_chance",
+            },
+            {
+                id = "rank_experienced_miss_chance",
+                type = "track",
+                val = 2,
+                min = 0,
+                max = 100,
+                step = 5,
+                def = 50,
+                hint = "mai_rank_experienced_miss_chance",
+            },
+            {
+                id = "rank_professional_miss_chance",
+                type = "track",
+                val = 2,
+                min = 0,
+                max = 100,
+                step = 5,
+                def = 25,
+                hint = "mai_rank_professional_miss_chance",
+            },
+            {
+                id = "rank_veteran_miss_chance",
+                type = "track",
+                val = 2,
+                min = 0,
+                max = 100,
+                step = 5,
+                def = 0,
+                hint = "mai_rank_veteran_miss_chance",
+            },
+            {
+                id = "rank_expert_miss_chance",
+                type = "track",
+                val = 2,
+                min = 0,
+                max = 100,
+                step = 5,
+                def = 0,
+                hint = "mai_rank_expert_miss_chance",
+            },
+            {
+                id = "rank_master_miss_chance",
+                type = "track",
+                val = 2,
+                min = 0,
+                max = 100,
+                step = 5,
+                def = 0,
+                hint = "mai_rank_master_miss_chance",
+            },
+            {
+                id = "rank_legend_miss_chance",
+                type = "track",
+                val = 2,
+                min = 0,
+                max = 100,
+                step = 5,
+                def = 0,
+                hint = "mai_rank_legend_miss_chance",
             },
             
             -- Debug Settings (only shown when debug mode is enabled)

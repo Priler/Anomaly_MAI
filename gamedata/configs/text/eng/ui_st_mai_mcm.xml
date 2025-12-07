@@ -2,6 +2,7 @@
 <!--
     MAI MCM Localization - English
     Part of MAI (Mutant/Anomaly Interaction) by AllC0r3
+    Version 2.2
 -->
 <string_table>
     <!-- Menu Title -->
@@ -9,7 +10,7 @@
         <text>MAI - NPC Anomaly Evasion</text>
     </string>
     <string id="ui_mcm_mai_title">
-        <text>MAI - Mutant/Anomaly Interaction\nNPC Anomaly Evasion System by AllC0r3</text>
+        <text>MAI - Mutant/Anomaly Interaction\nNPC Anomaly Evasion System by AllC0r3\nv2.2 - Rank &amp; Movement State Detection</text>
     </string>
     
     <!-- Section Titles -->
@@ -21,6 +22,12 @@
     </string>
     <string id="ui_mcm_mai_performance_title">
         <text>Performance Settings</text>
+    </string>
+    <string id="ui_mcm_mai_movement_title">
+        <text>Movement State Settings</text>
+    </string>
+    <string id="ui_mcm_mai_rank_title">
+        <text>Rank-Based Miss Chance</text>
     </string>
     <string id="ui_mcm_mai_debug_title">
         <text>Debug Settings</text>
@@ -71,12 +78,98 @@
         <text>When restriction limit is reached, detection radius is multiplied by this factor. Lower values = more aggressive reduction. Default: 0.75</text>
     </string>
     
+    <!-- Movement State Settings -->
+    <string id="ui_mcm_mai_standing_miss_multiplier">
+        <text>Standing Miss Multiplier</text>
+    </string>
+    <string id="ui_mcm_mai_standing_miss_multiplier_desc">
+        <text>Miss chance multiplier when NPC is standing still. Lower = less likely to miss anomalies. Standing NPCs are very careful and observant. Default: 0.3</text>
+    </string>
+    
+    <string id="ui_mcm_mai_walking_miss_multiplier">
+        <text>Walking Miss Multiplier</text>
+    </string>
+    <string id="ui_mcm_mai_walking_miss_multiplier_desc">
+        <text>Miss chance multiplier when NPC is walking. Lower = less likely to miss anomalies. Walking NPCs have time to observe their surroundings. Default: 0.6</text>
+    </string>
+    
+    <string id="ui_mcm_mai_running_miss_multiplier">
+        <text>Running Miss Multiplier</text>
+    </string>
+    <string id="ui_mcm_mai_running_miss_multiplier_desc">
+        <text>Miss chance multiplier when NPC is running. Higher = more likely to miss anomalies. Running NPCs may not notice dangers. Default: 1.2</text>
+    </string>
+    
+    <string id="ui_mcm_mai_combat_miss_multiplier">
+        <text>Combat Miss Multiplier</text>
+    </string>
+    <string id="ui_mcm_mai_combat_miss_multiplier_desc">
+        <text>Miss chance multiplier when NPC is in combat. Higher = more likely to miss anomalies. Combat distracts NPCs from environmental hazards. Default: 3.0</text>
+    </string>
+    
+    <!-- Rank-Based Miss Chance Settings -->
+    <string id="ui_mcm_mai_rank_novice_miss_chance">
+        <text>Novice Miss Chance (%)</text>
+    </string>
+    <string id="ui_mcm_mai_rank_novice_miss_chance_desc">
+        <text>Percentage chance for Novice rank NPCs to miss detecting an anomaly. Inexperienced stalkers often walk into anomalies. Default: 100%</text>
+    </string>
+    
+    <string id="ui_mcm_mai_rank_trainee_miss_chance">
+        <text>Trainee Miss Chance (%)</text>
+    </string>
+    <string id="ui_mcm_mai_rank_trainee_miss_chance_desc">
+        <text>Percentage chance for Trainee rank NPCs to miss detecting an anomaly. Still learning to navigate the Zone. Default: 75%</text>
+    </string>
+    
+    <string id="ui_mcm_mai_rank_experienced_miss_chance">
+        <text>Experienced Miss Chance (%)</text>
+    </string>
+    <string id="ui_mcm_mai_rank_experienced_miss_chance_desc">
+        <text>Percentage chance for Experienced rank NPCs to miss detecting an anomaly. Getting better at spotting dangers. Default: 50%</text>
+    </string>
+    
+    <string id="ui_mcm_mai_rank_professional_miss_chance">
+        <text>Professional Miss Chance (%)</text>
+    </string>
+    <string id="ui_mcm_mai_rank_professional_miss_chance_desc">
+        <text>Percentage chance for Professional rank NPCs to miss detecting an anomaly. Skilled at navigating anomaly fields. Default: 25%</text>
+    </string>
+    
+    <string id="ui_mcm_mai_rank_veteran_miss_chance">
+        <text>Veteran Miss Chance (%)</text>
+    </string>
+    <string id="ui_mcm_mai_rank_veteran_miss_chance_desc">
+        <text>Percentage chance for Veteran rank NPCs to miss detecting an anomaly. Highly experienced Zone survivors. Default: 0%</text>
+    </string>
+    
+    <string id="ui_mcm_mai_rank_expert_miss_chance">
+        <text>Expert Miss Chance (%)</text>
+    </string>
+    <string id="ui_mcm_mai_rank_expert_miss_chance_desc">
+        <text>Percentage chance for Expert rank NPCs to miss detecting an anomaly. Masters of Zone navigation. Default: 0%</text>
+    </string>
+    
+    <string id="ui_mcm_mai_rank_master_miss_chance">
+        <text>Master Miss Chance (%)</text>
+    </string>
+    <string id="ui_mcm_mai_rank_master_miss_chance_desc">
+        <text>Percentage chance for Master rank NPCs to miss detecting an anomaly. Elite stalkers who know every danger. Default: 0%</text>
+    </string>
+    
+    <string id="ui_mcm_mai_rank_legend_miss_chance">
+        <text>Legend Miss Chance (%)</text>
+    </string>
+    <string id="ui_mcm_mai_rank_legend_miss_chance_desc">
+        <text>Percentage chance for Legend rank NPCs to miss detecting an anomaly. Legendary stalkers - the best of the best. Default: 0%</text>
+    </string>
+    
     <!-- Debug Settings -->
     <string id="ui_mcm_mai_debug_show_anomalies_on_map">
         <text>Show Anomalies on Map</text>
     </string>
     <string id="ui_mcm_mai_debug_show_anomalies_on_map_desc">
-        <text>Display detected anomalies as markers on the PDA map. Requires Debug Mode enabled.</text>
+        <text>Display detected anomalies as markers on the PDA map. Updates every 10 seconds. Requires Debug Mode enabled.</text>
     </string>
     
     <string id="ui_mcm_mai_debug_log_subscriptions">

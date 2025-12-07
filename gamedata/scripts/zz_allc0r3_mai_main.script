@@ -1,7 +1,7 @@
 --[[
     MAI (Mutant/Anomaly Interaction) by AllC0r3
     Rework of ogse_anomaly_evader.script from OLR 3.0
-    Version: 2.0 (MCM Support)
+    Version: 2.1 (MCM Support + Arrival Compatibility)
     
     Features:
     - NPC anomaly detection and evasion
@@ -9,6 +9,11 @@
     - Armor-based damage multipliers
     - MCM configuration support
     - Comprehensive debug logging
+    - Arrival mod compatibility (dynamic anomalies)
+    
+    CHANGES in 2.1:
+    - Debug map now shows only anomalies that NPCs can actually detect
+    - Added Arrival mod compatibility (respects dynamic anomaly enable/disable)
 --]]
 
 --------------------------------------------------------------------------------
@@ -96,6 +101,82 @@ end
 
 function _dbg_printf(str, ...)
     if is_debug_enabled() then printf(str, ...) end
+end
+
+--------------------------------------------------------------------------------
+-- Arrival Mod Compatibility
+--------------------------------------------------------------------------------
+
+-- Check if Arrival mod is loaded
+local function is_arrival_loaded()
+    return drx_da_main ~= nil
+end
+
+-- Get Arrival's anomaly properties for current level
+local function get_arrival_anomaly_properties(level_name)
+    if not is_arrival_loaded() then return nil end
+    if not drx_da_main.updated_anomaly_levels then return nil end
+    return drx_da_main.updated_anomaly_levels[level_name]
+end
+
+-- Check if an Arrival anomaly is currently active/enabled
+-- Checks both the properties table AND the actual game object state
+local function is_arrival_anomaly_active(anomaly_id, level_name)
+    local level_data = get_arrival_anomaly_properties(level_name)
+    if not level_data then return true end -- If no Arrival data, assume active
+    
+    -- Check if level anomalies are globally disabled
+    if level_data.disabled then
+        return false
+    end
+    
+    -- Check individual anomaly properties
+    if level_data.anomalies_properties and level_data.anomalies_properties[anomaly_id] then
+        local props = level_data.anomalies_properties[anomaly_id]
+        if props.active ~= nil and props.active == false then
+            return false
+        end
+    end
+    
+    -- Also check the actual game object if available
+    local g_obj = level.object_by_id(anomaly_id)
+    if g_obj and g_obj.anomaly_get_disable_time then
+        -- If anomaly has a disable time set, it's disabled
+        local disable_time = g_obj:anomaly_get_disable_time()
+        if disable_time and disable_time > 0 then
+            return false
+        end
+    end
+    
+    return true -- Default to active
+end
+
+-- Check if anomaly is an Arrival dynamic anomaly
+local function is_arrival_anomaly(anomaly_id, level_name)
+    local level_data = get_arrival_anomaly_properties(level_name)
+    if not level_data or not level_data.anomalies then return false end
+    
+    for _, id in pairs(level_data.anomalies) do
+        if id == anomaly_id then
+            return true
+        end
+    end
+    return false
+end
+
+-- Check if a game object anomaly is currently enabled
+local function is_anomaly_enabled(g_obj)
+    if not g_obj then return false end
+    
+    -- Try to check if anomaly is disabled via game methods
+    if g_obj.anomaly_get_disable_time then
+        local disable_time = g_obj:anomaly_get_disable_time()
+        if disable_time and disable_time > 0 then
+            return false
+        end
+    end
+    
+    return true
 end
 
 --------------------------------------------------------------------------------
@@ -327,7 +408,7 @@ function mai_evade_npc(npc)
         -- Add new restrictions
         for _, v in pairs(restrictions) do
             if not session.added_restrictions[v] then
-                if not should_mob_miss_this_anomaly(id) then
+                if not should_mob_miss_this_anomaly(id, npc) then
                     ti(add_rest, v)
                 else
                     dbg_detect("NPC [%s] MISSED anomaly [%s]", npc:name(), v)
@@ -500,17 +581,128 @@ function is_companion_npc(npc)
     return npc and npc:has_info("npcx_is_companion")
 end
 
-function should_mob_miss_this_anomaly(id)
+-- Get rank-based miss chance (percentage 0-100)
+-- Based on z_npc_die_in_anomalies.script values
+local function get_rank_miss_chance(npc)
+    if not npc then return 50 end
+    
+    local rank = ranks.get_se_obj_rank_name(npc)
+    if not rank then rank = "novice" end
+    
+    -- Map rank to MCM setting key
+    local rank_settings = {
+        ["novice"] = "rank_novice_miss_chance",
+        ["trainee"] = "rank_trainee_miss_chance",
+        ["experienced"] = "rank_experienced_miss_chance",
+        ["professional"] = "rank_professional_miss_chance",
+        ["veteran"] = "rank_veteran_miss_chance",
+        ["expert"] = "rank_expert_miss_chance",
+        ["master"] = "rank_master_miss_chance",
+        ["legend"] = "rank_legend_miss_chance",
+    }
+    
+    local setting_key = rank_settings[rank]
+    if setting_key then
+        return get_mcm_setting(setting_key, 50)
+    end
+    
+    -- Default fallback based on original values
+    local default_chances = {
+        ["novice"] = 100,
+        ["trainee"] = 75,
+        ["experienced"] = 50,
+        ["professional"] = 25,
+        ["veteran"] = 0,
+        ["expert"] = 0,
+        ["master"] = 0,
+        ["legend"] = 0,
+    }
+    
+    return default_chances[rank] or 50
+end
+
+-- Get NPC movement/combat state multiplier for miss chance
+-- Returns a multiplier: lower = less likely to miss, higher = more likely to miss
+local function get_npc_state_miss_multiplier(npc)
+    if not npc then return 1.0 end
+    
+    -- Check if NPC is in combat
+    local best_enemy = npc:best_enemy()
+    if best_enemy then
+        -- In combat - much more likely to miss anomalies (distracted by fighting)
+        local combat_mult = get_mcm_setting("combat_miss_multiplier", 3.0)
+        dbg_detect("NPC [%s] in COMBAT - miss multiplier: %.1f", npc:name(), combat_mult)
+        return combat_mult
+    end
+    
+    -- Check movement speed/state
+    local movement_type = npc:movement_type()
+    -- movement_type: 0 = stand, 1 = walk, 2 = run
+    
+    if movement_type == 0 then
+        -- Standing still - very unlikely to miss (careful observation)
+        local stand_mult = get_mcm_setting("standing_miss_multiplier", 0.3)
+        dbg_detect("NPC [%s] STANDING - miss multiplier: %.1f", npc:name(), stand_mult)
+        return stand_mult
+    elseif movement_type == 1 then
+        -- Walking - less likely to miss (has time to observe)
+        local walk_mult = get_mcm_setting("walking_miss_multiplier", 0.6)
+        dbg_detect("NPC [%s] WALKING - miss multiplier: %.1f", npc:name(), walk_mult)
+        return walk_mult
+    elseif movement_type == 2 then
+        -- Running - normal chance to miss
+        local run_mult = get_mcm_setting("running_miss_multiplier", 1.2)
+        dbg_detect("NPC [%s] RUNNING - miss multiplier: %.1f", npc:name(), run_mult)
+        return run_mult
+    end
+    
+    return 1.0 -- Default
+end
+
+function should_mob_miss_this_anomaly(id, npc)
     local session = mai_mob_session[id]
-    if session then
-        session.custom_miss_count = session.custom_miss_count + 1
-        if session.custom_miss_count >= session.custom_miss_count_step then
-            session.custom_miss_count = 0
-            session.custom_miss_count_step = rd(session.custom_miss_count_min, session.custom_miss_count_max)
-            dbg_detect("NPC ID [%d] will miss next anomaly (step: %d)", id, session.custom_miss_count_step)
-            return true
+    if not session then return false end
+    
+    -- First check: Rank-based miss chance (percentage roll)
+    -- This is a direct percentage chance to miss, independent of the step system
+    if npc then
+        local rank_chance = get_rank_miss_chance(npc)
+        if rank_chance > 0 then
+            local roll = rd(1, 100)
+            if roll <= rank_chance then
+                local rank = ranks.get_se_obj_rank_name(npc) or "unknown"
+                dbg_detect("NPC [%s] rank [%s] FAILED rank check (rolled %d <= %d%%)", 
+                    npc:name(), rank, roll, rank_chance)
+                return true
+            end
+        elseif rank_chance == 0 then
+            -- Rank has 0% miss chance - never miss due to rank (veterans+)
+            dbg_detect("NPC [%s] rank has 0%% miss chance - guaranteed detection", npc:name())
+            return false
         end
     end
+    
+    -- Second check: Movement state modifier on step-based system
+    local state_mult = 1.0
+    if npc then
+        state_mult = get_npc_state_miss_multiplier(npc)
+    end
+    
+    -- Adjust miss step based on state
+    -- Lower multiplier = need more counts to miss = less likely to miss
+    -- Higher multiplier = need fewer counts to miss = more likely to miss
+    local adjusted_step = math.floor(session.custom_miss_count_step / state_mult)
+    if adjusted_step < 1 then adjusted_step = 1 end
+    
+    session.custom_miss_count = session.custom_miss_count + 1
+    if session.custom_miss_count >= adjusted_step then
+        session.custom_miss_count = 0
+        session.custom_miss_count_step = rd(session.custom_miss_count_min, session.custom_miss_count_max)
+        dbg_detect("NPC ID [%d] will miss anomaly (step: %d, adjusted: %d, mult: %.1f)", 
+            id, session.custom_miss_count_step, adjusted_step, state_mult)
+        return true
+    end
+    
     return false
 end
 
@@ -521,21 +713,42 @@ function mob_get_all_nearest_not_ignore_anoms(mob, radius)
     
     local mob_pos = mob:position()
     local fields = bind_anomaly_field.fields_by_names
-    local checked, found = 0, 0
+    local checked, found, skipped = 0, 0, 0
+    local level_name = level.name()
+    local arrival_loaded = is_arrival_loaded()
     
     for _, v in pairs(fields) do
         checked = checked + 1
-        local anom = alife_object(v.object:id())
+        local anom_id = v.object:id()
+        local anom = alife_object(anom_id)
         if anom and not is_always_skip_anomalies(anom) and not is_npc_ignore_anom(mob, anom) then
-            local dist = v.object:position():distance_to(mob_pos)
-            if radius >= dist then
-                ti(t, anom:name())
-                found = found + 1
+            -- Check if Arrival anomaly is active
+            local is_active = true
+            if arrival_loaded then
+                is_active = is_arrival_anomaly_active(anom_id, level_name)
+            end
+            
+            -- Also check actual game object state
+            if is_active then
+                local g_obj = level.object_by_id(anom_id)
+                if g_obj and not is_anomaly_enabled(g_obj) then
+                    is_active = false
+                end
+            end
+            
+            if is_active then
+                local dist = v.object:position():distance_to(mob_pos)
+                if radius >= dist then
+                    ti(t, anom:name())
+                    found = found + 1
+                end
+            else
+                skipped = skipped + 1
             end
         end
     end
     
-    dbg_detect("Scanned %d fields, found %d anomalies for [%s]", checked, found, mob:name())
+    dbg_detect("Scanned %d fields, found %d anomalies, skipped %d disabled for [%s]", checked, found, skipped, mob:name())
     return t
 end
 
@@ -580,10 +793,12 @@ function tm_fail_task(task_id)
 end
 
 --------------------------------------------------------------------------------
--- Debug Display
+-- Debug Display (FIXED: Now filters out disabled anomalies properly)
 --------------------------------------------------------------------------------
 
 local show = false
+local show_timer = 0
+local SHOW_REFRESH_INTERVAL = 10000 -- Refresh map markers every 10 seconds
 
 function sim_object_level_name(s_obj)
     return alife():level_name(game_graph():vertex(s_obj.m_game_vertex_id):level_id())
@@ -591,23 +806,79 @@ end
 
 function _dbg_show_anoms()
     if not is_debug_enabled() or not get_mcm_setting("debug_show_anomalies_on_map", false) then return end
-    if show then return end
+    
+    local tg = time_global()
+    
+    -- Allow refresh after interval
+    if show and tg < show_timer then return end
+    show_timer = tg + SHOW_REFRESH_INTERVAL
     
     local count = 0
+    local skipped_disabled = 0
+    local skipped_not_bound = 0
+    local level_name = level.name()
+    local arrival_loaded = is_arrival_loaded()
+    
+    -- Use original method: iterate all alife objects
     for i = 1, 65534 do
         local obj = alife():object(i)
         if obj and IsAnomaly(obj) then
-            if sim_object_level_name(obj) == level.name() and not is_always_skip_anomalies(obj) then
+            if sim_object_level_name(obj) == level_name and not is_always_skip_anomalies(obj) then
+                -- Check if anomaly is in bind_anomaly_field (actually loaded/active)
+                local is_bound = false
+                local field = nil
+                if bind_anomaly_field and bind_anomaly_field.fields_by_names then
+                    field = bind_anomaly_field.fields_by_names[obj:name()]
+                    is_bound = field ~= nil
+                end
+                
+                -- Check if Arrival anomaly is active
+                local is_active = true
+                if arrival_loaded then
+                    is_active = is_arrival_anomaly_active(i, level_name)
+                end
+                
+                -- Also check actual game object state
+                if is_bound and field and field.object then
+                    local g_obj = level.object_by_id(i)
+                    if g_obj and not is_anomaly_enabled(g_obj) then
+                        is_active = false
+                    end
+                end
+                
+                -- Remove old marker first
                 if level.map_has_object_spot(i, "anomaly_disabled") ~= 0 then
                     level.map_remove_object_spot(i, "anomaly_disabled")
                 end
-                level.map_add_object_spot_ser(i, "anomaly_disabled", "Name: "..obj:name().." \\nSection: "..obj:section_name())
-                count = count + 1
+                
+                if not is_bound then
+                    skipped_not_bound = skipped_not_bound + 1
+                elseif not is_active then
+                    skipped_disabled = skipped_disabled + 1
+                else
+                    -- Only show bound and active anomalies
+                    local marker_text = "Name: "..obj:name().." \\nSection: "..obj:section_name()
+                    
+                    if arrival_loaded and is_arrival_anomaly(i, level_name) then
+                        marker_text = marker_text .. "\\n[Arrival Dynamic]"
+                    end
+                    
+                    level.map_add_object_spot_ser(i, "anomaly_disabled", marker_text)
+                    count = count + 1
+                end
             end
         end
     end
-    dbg_log("MAP", "Added %d anomaly markers", count)
+    
+    dbg_log("MAP", "Added %d markers (skipped: %d disabled, %d not loaded)", count, skipped_disabled, skipped_not_bound)
     show = true
+end
+
+-- Force refresh of map markers
+function _dbg_refresh_anoms()
+    show = false
+    show_timer = 0
+    _dbg_show_anoms()
 end
 
 --------------------------------------------------------------------------------
@@ -722,6 +993,9 @@ function on_game_start()
     RegisterScriptCallback("actor_on_interaction", actor_on_interaction)
     RegisterScriptCallback("actor_on_sleep_new", actor_on_sleep_new)
     
-    dbg_log("INIT", "MAI v2.0 initialized - MCM:%s Debug:%s", tostring(ui_mcm ~= nil), tostring(cached_debug_mode))
-    printf("-[MAI] Mutant/Anomaly Interaction v2.0 loaded (MCM: %s)", tostring(ui_mcm ~= nil))
+    local arrival_status = is_arrival_loaded() and "detected" or "not detected"
+    dbg_log("INIT", "MAI v2.1 initialized - MCM:%s Debug:%s Arrival:%s", 
+        tostring(ui_mcm ~= nil), tostring(cached_debug_mode), arrival_status)
+    printf("-[MAI] Mutant/Anomaly Interaction v2.1 loaded (MCM: %s, Arrival: %s)", 
+        tostring(ui_mcm ~= nil), arrival_status)
 end
