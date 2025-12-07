@@ -140,10 +140,10 @@ ogive_task = task_manager.CRandomTask.give_task
 --- Hook for task_manager.CRandomTask.give_task
 -- @param self Task manager instance
 -- @param task_id Task ID
--- @param task_giver_id ID of NPC giving task
+-- @param task_giver_id ID of NPC giving task (can be nil for tasks without giver)
 function task_manager.CRandomTask.give_task(self, task_id, task_giver_id)
     ogive_task(self, task_id, task_giver_id)
-    printf("%s - give task %s -> %s", sn, task_giver_id, task_id)
+    printf("%s - give task %s -> %s", sn, tostring(task_giver_id), tostring(task_id))
     SendScriptCallback("tm_give_task", task_giver_id, task_id)
 end
 

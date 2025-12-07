@@ -637,19 +637,19 @@ local function get_npc_state_miss_multiplier(npc)
     
     -- Check movement speed/state
     local movement_type = npc:movement_type()
-    -- movement_type: 0 = stand, 1 = walk, 2 = run
+    -- movement_type: move.stand = 0, move.walk = 1, move.run = 2
     
-    if movement_type == 0 then
+    if movement_type == move.stand then
         -- Standing still - very unlikely to miss (careful observation)
         local stand_mult = get_mcm_setting("standing_miss_multiplier", 0.3)
         dbg_detect("NPC [%s] STANDING - miss multiplier: %.1f", npc:name(), stand_mult)
         return stand_mult
-    elseif movement_type == 1 then
+    elseif movement_type == move.walk then
         -- Walking - less likely to miss (has time to observe)
         local walk_mult = get_mcm_setting("walking_miss_multiplier", 0.6)
         dbg_detect("NPC [%s] WALKING - miss multiplier: %.1f", npc:name(), walk_mult)
         return walk_mult
-    elseif movement_type == 2 then
+    elseif movement_type == move.run then
         -- Running - normal chance to miss
         local run_mult = get_mcm_setting("running_miss_multiplier", 1.2)
         dbg_detect("NPC [%s] RUNNING - miss multiplier: %.1f", npc:name(), run_mult)
@@ -665,13 +665,15 @@ function should_mob_miss_this_anomaly(id, npc)
     
     -- First check: Rank-based miss chance (percentage roll)
     -- This is a direct percentage chance to miss, independent of the step system
-    if npc then
+    -- Only applies to stalkers (human NPCs), not mutants
+    if npc and IsStalker(npc) then
         local rank_chance = get_rank_miss_chance(npc)
         if rank_chance > 0 then
             local roll = rd(1, 100)
-            if roll <= rank_chance then
+            -- Using < to match original z_npc_die_in_anomalies.script behavior
+            if roll < rank_chance then
                 local rank = ranks.get_se_obj_rank_name(npc) or "unknown"
-                dbg_detect("NPC [%s] rank [%s] FAILED rank check (rolled %d <= %d%%)", 
+                dbg_detect("NPC [%s] rank [%s] FAILED rank check (rolled %d < %d%%)", 
                     npc:name(), rank, roll, rank_chance)
                 return true
             end
@@ -928,6 +930,56 @@ function mai_subscribe_all()
 end
 
 --------------------------------------------------------------------------------
+-- NPC Spawn/Destroy Handlers
+--------------------------------------------------------------------------------
+
+-- Called when any NPC spawns (including debug-spawned)
+function npc_on_net_spawn(npc, se_obj)
+    if not npc then return end
+    if not get_mcm_setting("mod_enabled", true) then return end
+    
+    -- Safety check - make sure we can access the NPC
+    local is_stalker = false
+    local success, err = pcall(function()
+        is_stalker = IsStalker(npc)
+    end)
+    
+    if not success then
+        dbg_log("SPAWN", "Error checking NPC type: %s", tostring(err))
+        return
+    end
+    
+    -- Only handle stalkers, not mutants (mutants have their own handler if needed)
+    if not is_stalker then return end
+    
+    -- Check if already subscribed
+    if mai_subscribed(npc, "npc") then return end
+    
+    -- Subscribe the NPC
+    mai_subscribe(npc, "npc", "net_spawn", true)
+    
+    local npc_name = "unknown"
+    pcall(function() npc_name = npc:name() end)
+    dbg_log("SPAWN", "NPC [%s] spawned and subscribed", npc_name)
+end
+
+-- Called when NPC is destroyed from network
+function npc_on_net_destroy(npc)
+    if not npc then return end
+    
+    local id
+    local success = pcall(function() id = npc:id() end)
+    if not success or not id then return end
+    
+    if mai_mob_session[id] then
+        mai_unsubscribe(npc, "npc")
+        local npc_name = "unknown"
+        pcall(function() npc_name = npc:name() end)
+        dbg_log("SPAWN", "NPC [%s] destroyed and unsubscribed", npc_name)
+    end
+end
+
+--------------------------------------------------------------------------------
 -- Event Handlers
 --------------------------------------------------------------------------------
 
@@ -978,6 +1030,50 @@ function save_state(mdata)
 end
 
 --------------------------------------------------------------------------------
+-- NPC Death by Anomaly Logging
+--------------------------------------------------------------------------------
+
+function npc_on_death_callback_new(victim, killer)
+    if not victim then return end
+    
+    -- Safety wrapper for all operations
+    local success, err = pcall(function()
+        -- Check if killer is an anomaly
+        if killer and IsAnomaly(killer) then
+            local victim_name = victim:name() or "unknown"
+            local victim_rank = "unknown"
+            if IsStalker(victim) then
+                victim_rank = ranks.get_se_obj_rank_name(victim) or "unknown"
+            end
+            local killer_name = killer:name() or "unknown_anomaly"
+            local killer_section = killer:section() or "unknown"
+            
+            -- Always log anomaly deaths (useful info even without debug mode)
+            printf("[MAI] NPC [%s] (rank: %s) KILLED by anomaly [%s] (%s)", 
+                victim_name, victim_rank, killer_name, killer_section)
+            
+            -- Also log to debug if enabled
+            dbg_log("DEATH", "NPC [%s] (rank: %s) killed by anomaly [%s] section [%s]", 
+                victim_name, victim_rank, killer_name, killer_section)
+            
+            -- Check if this NPC was subscribed (means our detection failed or they intentionally walked in)
+            local id = victim:id()
+            if mai_mob_session[id] then
+                dbg_log("DEATH", "NPC [%s] was subscribed to MAI - detection may have failed", victim_name)
+                -- Clean up session
+                mai_mob_session[id] = nil
+                npc_count = npc_count - 1
+                if npc_count < 0 then npc_count = 0 end
+            end
+        end
+    end)
+    
+    if not success then
+        dbg_log("DEATH", "Error in death callback: %s", tostring(err))
+    end
+end
+
+--------------------------------------------------------------------------------
 -- Initialization
 --------------------------------------------------------------------------------
 
@@ -992,10 +1088,13 @@ function on_game_start()
     RegisterScriptCallback("on_option_change", on_option_change)
     RegisterScriptCallback("actor_on_interaction", actor_on_interaction)
     RegisterScriptCallback("actor_on_sleep_new", actor_on_sleep_new)
+    RegisterScriptCallback("npc_on_death_callback_new", npc_on_death_callback_new)
+    RegisterScriptCallback("npc_on_net_spawn", npc_on_net_spawn)
+    RegisterScriptCallback("npc_on_net_destroy", npc_on_net_destroy)
     
     local arrival_status = is_arrival_loaded() and "detected" or "not detected"
-    dbg_log("INIT", "MAI v2.1 initialized - MCM:%s Debug:%s Arrival:%s", 
+    dbg_log("INIT", "MAI v2.2 initialized - MCM:%s Debug:%s Arrival:%s", 
         tostring(ui_mcm ~= nil), tostring(cached_debug_mode), arrival_status)
-    printf("-[MAI] Mutant/Anomaly Interaction v2.1 loaded (MCM: %s, Arrival: %s)", 
+    printf("-[MAI] Mutant/Anomaly Interaction v2.2 loaded (MCM: %s, Arrival: %s)", 
         tostring(ui_mcm ~= nil), arrival_status)
 end

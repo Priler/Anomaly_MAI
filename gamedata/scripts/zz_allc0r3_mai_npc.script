@@ -82,7 +82,30 @@ function mai_on_npc_before_hit(npc,shit,bone_id,flags)
 			_dbg("~[MAI][%s][mai_on_npc_before_hit] IGNORE THIS ANOM[%s], DONT DAMAGE, %s", sn, npc:name(), anomaly:name())
 			return					
 		end
-		_dbg("-[MAI][%s][mai_on_npc_before_hit] SUBSCRIBED NPC[%s], DAMAGED BY %s", sn, npc:name(), anomaly:name())
+		
+		-- Get movement state for logging
+		local state_str = "unknown"
+		local in_combat = npc:best_enemy() ~= nil
+		if in_combat then
+			state_str = "COMBAT"
+		else
+			local movement_type = npc:movement_type()
+			if movement_type == move.stand then
+				state_str = "standing"
+			elseif movement_type == move.walk then
+				state_str = "walking"
+			elseif movement_type == move.run then
+				state_str = "running"
+			end
+		end
+		
+		-- Get rank for logging
+		local rank_str = "unknown"
+		if IsStalker(npc) then
+			rank_str = ranks.get_se_obj_rank_name(npc) or "unknown"
+		end
+		
+		_dbg("-[MAI][%s][mai_on_npc_before_hit] SUBSCRIBED NPC[%s] (rank: %s, state: %s), DAMAGED BY %s", sn, npc:name(), rank_str, state_str, anomaly:name())
 		shit.power = shit.power * zz_allc0r3_mai_main.get_npc_dmg_mult(npc, anomaly)
 	end
 end
