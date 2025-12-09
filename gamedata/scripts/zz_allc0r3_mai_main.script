@@ -60,7 +60,7 @@ local function get_mcm_setting(key, default)
 end
 
 local function is_mod_enabled() return cached_mod_enabled end
-local function is_debug_enabled() return cached_debug_mode end
+function is_debug_enabled() return cached_debug_mode end
 
 local function update_mcm_cache()
     cached_mod_enabled = get_mcm_setting("mod_enabled", true)
@@ -221,15 +221,19 @@ local function is_ignore_npc(npc)
     local profile = npc:profile_name()
     
     if zz_allc0r3_mai_npc_settings.demonized_ignore_npc[section] then
+        dbg_log("IGNORE", "NPC [%s] ignored by section [%s]", npc:name(), section)
         return true
     end
     if zz_allc0r3_mai_npc_settings.demonized_ignore_npc[profile] then
+        dbg_log("IGNORE", "NPC [%s] ignored by profile [%s]", npc:name(), profile)
         return true
     end
     if get_object_story_id(id) then
+        dbg_log("IGNORE", "NPC [%s] ignored by story_id [%s]", npc:name(), get_object_story_id(id))
         return true
     end
     if IsTrader(npc) then
+        dbg_log("IGNORE", "NPC [%s] ignored - is trader", npc:name())
         return true
     end
     return false
@@ -239,21 +243,82 @@ local function is_companion_npc(npc)
     return npc and npc:has_info("npcx_is_companion")
 end
 
-local function should_ignore_npc(npc)
-    if not npc or not npc:alive() then return true end
-    if not IsStalker(npc) then return true end
+-- Check if NPC should have anomaly damage ENABLED at engine level
+-- Returns false for NPCs that should NEVER take damage (callback won't fire)
+-- Returns true for NPCs that MIGHT take damage (callback will fire, then we roll)
+local function should_enable_anomaly_damage(npc)
+    if not npc or not npc:alive() then return false end
+    if not IsStalker(npc) then return false end
     
     local community = npc:character_community()
     
-    -- Check community ignore settings
+    -- Full ignore - no damage (greh)
     if zz_allc0r3_mai_npc_settings.mai_always_full_ignore_community[community] then
-        return true
+        dbg_log("CONFIG", "NPC [%s] damage=false (full ignore community: %s)", npc:name(), community)
+        return false
     end
     
-    if is_ignore_npc(npc) then return true end
-    if is_companion_npc(npc) then return true end
+    -- No damage communities - they evade but don't take damage (monolith)
+    if zz_allc0r3_mai_npc_settings.mai_no_damage_community[community] then
+        dbg_log("CONFIG", "NPC [%s] damage=false (no damage community: %s)", npc:name(), community)
+        return false
+    end
     
-    return false
+    -- Important NPCs - no damage
+    if is_ignore_npc(npc) then 
+        dbg_log("CONFIG", "NPC [%s] damage=false (is_ignore_npc)", npc:name())
+        return false 
+    end
+    
+    -- Companions - no damage
+    if is_companion_npc(npc) then 
+        dbg_log("CONFIG", "NPC [%s] damage=false (companion)", npc:name())
+        return false 
+    end
+    
+    -- Everyone else can take damage (zombied, stalkers, etc.)
+    -- The actual damage is determined by roll in should_npc_take_damage()
+    return true
+end
+
+-- Check if NPC should get pathfinding restrictions (try to avoid anomalies)
+-- Returns false for NPCs that should walk into anomalies
+local function should_add_restrictions(npc)
+    if not npc or not npc:alive() then return false end
+    if not IsStalker(npc) then return false end
+    
+    local community = npc:character_community()
+    
+    -- Full ignore - no restrictions (greh)
+    if zz_allc0r3_mai_npc_settings.mai_always_full_ignore_community[community] then
+        return false
+    end
+    
+    -- No evade communities - no restrictions, walk straight into anomalies (zombied)
+    if zz_allc0r3_mai_npc_settings.mai_no_evade_community[community] then
+        return false
+    end
+    
+    -- Important NPCs - no restrictions (they're protected anyway)
+    if is_ignore_npc(npc) then return false end
+    
+    -- Companions - no restrictions
+    if is_companion_npc(npc) then return false end
+    
+    -- Everyone else gets restrictions (monolith, stalkers, etc.)
+    return true
+end
+
+-- Configure NPC anomaly interaction based on community/status
+local function configure_npc_anomaly_interaction(npc)
+    if not npc or not npc:alive() then return end
+    if not IsStalker(npc) then return end
+    
+    local should_damage = should_enable_anomaly_damage(npc)
+    npc:set_enable_anomalies_damage(should_damage)
+    
+    dbg_log("CONFIG", "NPC [%s] community [%s] damage=%s", 
+        npc:name(), npc:character_community(), tostring(should_damage))
 end
 
 --------------------------------------------------------------------------------
@@ -343,7 +408,7 @@ local function get_nearby_anomalies(npc_pos, radius)
 end
 
 local function update_npc_restrictions(npc)
-    if should_ignore_npc(npc) then return end
+    if not should_add_restrictions(npc) then return end
     
     local id = npc:id()
     local current_time = time_global()
@@ -401,6 +466,10 @@ end
 function should_npc_take_damage(npc, anomaly)
     if not npc or not anomaly then return true end
     
+    -- Note: Community checks (greh, monolith), companion checks, and important NPC checks
+    -- are now handled at engine level via set_enable_anomalies_damage(false)
+    -- This callback only fires for NPCs that CAN take damage
+    
     -- Always skip during surge
     if surge_started() then
         dbg_log("DAMAGE", "Surge active, blocking damage to [%s]", npc:name())
@@ -410,22 +479,6 @@ function should_npc_take_damage(npc, anomaly)
     -- Check if anomaly should be skipped
     local anom_name = anomaly:name()
     if is_always_skip_anomaly(anom_name) then
-        return false
-    end
-    
-    -- Check community settings
-    local community = npc:character_community()
-    if zz_allc0r3_mai_npc_settings.mai_always_full_ignore_community[community] then
-        return false
-    end
-    
-    -- Companions don't take anomaly damage
-    if is_companion_npc(npc) then
-        return false
-    end
-    
-    -- Important NPCs don't take anomaly damage
-    if is_ignore_npc(npc) then
         return false
     end
     
@@ -466,33 +519,120 @@ function should_npc_take_damage(npc, anomaly)
     return takes_damage
 end
 
-function get_npc_dmg_mult(npc, anomaly)
-    if not npc then return 1.0 end
+--------------------------------------------------------------------------------
+-- Armor Protection System
+--------------------------------------------------------------------------------
+
+-- Map anomaly patterns to protection stats
+local anomaly_protection_map = {
+    -- Electric anomalies
+    { pattern = "electra",      protection = "shock_protection" },
+    { pattern = "electric",     protection = "shock_protection" },
+    { pattern = "tesla",        protection = "shock_protection" },
+    { pattern = "static",       protection = "shock_protection" },
     
-    -- Check if visual damage multipliers enabled
-    if not get_mcm_setting("enable_visual_damage_mult", true) then
-        return 1.0
-    end
+    -- Thermal/Fire anomalies
+    { pattern = "burner",       protection = "burn_protection" },
+    { pattern = "thermal",      protection = "burn_protection" },
+    { pattern = "fire",         protection = "burn_protection" },
+    { pattern = "inferno",      protection = "burn_protection" },
+    { pattern = "zharka",       protection = "burn_protection" },
     
-    -- Get visual settings for this NPC's armor
-    local visual = npc:get_visual_name()
-    local visual_settings = zz_allc0r3_mai_npc_settings.mai_npc_settings
+    -- Chemical/Acid anomalies
+    { pattern = "acidic",       protection = "chemical_burn_protection" },
+    { pattern = "chemical",     protection = "chemical_burn_protection" },
+    { pattern = "gas",          protection = "chemical_burn_protection" },
+    { pattern = "fruit_punch",  protection = "chemical_burn_protection" },
     
-    if visual_settings then
-        for pattern, settings in pairs(visual_settings) do
-            if sf(visual, pattern) then
-                local anomaly_section = anomaly:section()
-                for anom_pattern, mult in pairs(settings.damage_mult or {}) do
-                    if sf(anomaly_section, anom_pattern) then
-                        return mult
-                    end
-                end
-                return settings.damage_mult_default or 1.0
-            end
+    -- Gravity anomalies
+    { pattern = "gravitational", protection = "strike_protection" },
+    { pattern = "springboard",   protection = "strike_protection" },
+    { pattern = "vortex",        protection = "strike_protection" },
+    { pattern = "whirligig",     protection = "strike_protection" },
+    { pattern = "galantine",     protection = "strike_protection" },
+    { pattern = "tramplin",      protection = "strike_protection" },
+    
+    -- Radiation anomalies
+    { pattern = "radioactive",  protection = "radiation_protection" },
+    { pattern = "radiation",    protection = "radiation_protection" },
+    
+    -- Psy anomalies
+    { pattern = "psy",          protection = "telepatic_protection" },
+    { pattern = "brain",        protection = "telepatic_protection" },
+    { pattern = "telepatic",    protection = "telepatic_protection" },
+}
+
+-- Get protection type for an anomaly
+local function get_anomaly_protection_type(anomaly_section)
+    if not anomaly_section then return nil end
+    
+    local section_lower = anomaly_section:lower()
+    for _, mapping in ipairs(anomaly_protection_map) do
+        if sf(section_lower, mapping.pattern) then
+            return mapping.protection
         end
     end
     
-    return 1.0
+    return nil
+end
+
+-- Get NPC's outfit protection value
+local function get_npc_outfit_protection(npc, protection_type)
+    if not npc or not protection_type then return 0 end
+    
+    -- Try to get outfit from slot 7 (outfit slot)
+    local outfit = npc:item_in_slot(7)
+    if not outfit then 
+        dbg_log("ARMOR", "NPC [%s] has no outfit", npc:name())
+        return 0 
+    end
+    
+    local outfit_section = outfit:section()
+    if not outfit_section then return 0 end
+    
+    -- Read protection value from outfit config
+    local protection = SYS_GetParam(2, outfit_section, protection_type, 0)
+    
+    dbg_log("ARMOR", "NPC [%s] outfit [%s] %s = %.3f", 
+        npc:name(), outfit_section, protection_type, protection)
+    
+    return protection or 0
+end
+
+function get_npc_dmg_mult(npc, anomaly)
+    if not npc then return 1.0 end
+    
+    -- Check if armor damage multipliers enabled
+    if not get_mcm_setting("enable_armor_damage_mult", true) then
+        return 1.0
+    end
+    
+    if not anomaly then return 1.0 end
+    
+    local anomaly_section = anomaly:section()
+    if not anomaly_section then return 1.0 end
+    
+    -- Get protection type for this anomaly
+    local protection_type = get_anomaly_protection_type(anomaly_section)
+    if not protection_type then
+        dbg_log("ARMOR", "Unknown anomaly type [%s], using full damage", anomaly_section)
+        return 1.0
+    end
+    
+    -- Get NPC's protection value
+    local protection = get_npc_outfit_protection(npc, protection_type)
+    
+    -- Convert protection to damage multiplier
+    -- protection = 0.0 → mult = 1.0 (full damage)
+    -- protection = 0.5 → mult = 0.5 (half damage)
+    -- protection = 1.0 → mult = 0.0 (no damage)
+    -- protection > 1.0 → mult = negative (healing? cap at 0)
+    local damage_mult = math.max(0, 1.0 - protection)
+    
+    dbg_log("ARMOR", "Anomaly [%s] → %s → protection %.2f → damage mult %.2f",
+        anomaly_section, protection_type, protection, damage_mult)
+    
+    return damage_mult
 end
 
 --------------------------------------------------------------------------------
@@ -502,6 +642,39 @@ end
 function surge_started()
     return (surge_manager and surge_manager.is_loaded() and surge_manager.is_started()) or
            (psi_storm_manager and psi_storm_manager.is_loaded() and psi_storm_manager.is_started())
+end
+
+--------------------------------------------------------------------------------
+-- Map Marker Cleanup (for old versions)
+--------------------------------------------------------------------------------
+
+local function cleanup_old_map_markers()
+    local count = 0
+    for i = 1, 65534 do
+        if level.map_has_object_spot(i, "anomaly_disabled") ~= 0 then
+            level.map_remove_object_spot(i, "anomaly_disabled")
+            count = count + 1
+        end
+    end
+    
+    if count > 0 then
+        printf("[MAI] Cleaned up %d old map markers", count)
+        dbg_log("CLEANUP", "Removed %d old anomaly map markers", count)
+    end
+    
+    return count
+end
+
+-- Called when MCM option changes
+local function on_option_change()
+    update_mcm_cache()
+    
+    -- Check if cleanup was requested
+    if get_mcm_setting("cleanup_map_markers", false) then
+        cleanup_old_map_markers()
+        -- Reset the checkbox (user needs to manually set it again)
+        -- Note: This doesn't actually reset MCM, just our internal state
+    end
 end
 
 --------------------------------------------------------------------------------
@@ -530,6 +703,9 @@ local function on_actor_update()
 
         -- Skip anything that is still not a valid game object
         if npc and npc.alive and npc:alive() and IsStalker(npc) then
+            -- Configure damage enable/disable at engine level
+            configure_npc_anomaly_interaction(npc)
+            -- Add pathfinding restrictions
             update_npc_restrictions(npc)
             count = count + 1
         end
@@ -540,14 +716,36 @@ end
 -- Callbacks
 --------------------------------------------------------------------------------
 
+-- Delay cache rebuild to allow Arrival mod to finish respawning anomalies
+-- Arrival uses: 0.5s delay for cleanup + 0.3s delay for spawn + queue processing
+
+local function schedule_cache_rebuild(reason)
+    local delay = get_mcm_setting("cache_rebuild_delay", 2.5)
+    dbg_log("EVENT", "%s, scheduling cache rebuild in %.1fs", reason, delay)
+    
+    -- Cancel any pending rebuild
+    RemoveTimeEvent("mai_cache_rebuild", "mai_cache_rebuild")
+    
+    -- If delay is 0, rebuild immediately
+    if delay <= 0 then
+        invalidate_cache()
+        return
+    end
+    
+    -- Schedule new rebuild with delay
+    CreateTimeEvent("mai_cache_rebuild", "mai_cache_rebuild", delay, function()
+        dbg_log("EVENT", "Executing delayed cache rebuild")
+        invalidate_cache()
+        return true
+    end)
+end
+
 local function on_surge_end()
-    dbg_log("EVENT", "Surge ended, rebuilding cache")
-    invalidate_cache()
+    schedule_cache_rebuild("Surge ended")
 end
 
 local function on_psy_storm_end()
-    dbg_log("EVENT", "Psy-storm ended, rebuilding cache")
-    invalidate_cache()
+    schedule_cache_rebuild("Psy-storm ended")
 end
 
 local function on_game_load()
@@ -562,15 +760,13 @@ local function on_level_changed()
     npc_last_update = {}
 end
 
-local function on_option_change()
-    update_mcm_cache()
-end
-
 -- Cleanup when NPC goes offline
-local function on_npc_net_destroy(npc)
-    if npc then
-        npc_last_update[npc:id()] = nil
+local function on_npc_net_destroy(npc_or_id)
+    local id = npc_or_id
+    if type(npc_or_id) ~= "number" then
+        id = npc_or_id:id()
     end
+    npc_last_update[id] = nil
 end
 
 --------------------------------------------------------------------------------

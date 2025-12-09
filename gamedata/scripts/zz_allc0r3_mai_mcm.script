@@ -13,13 +13,15 @@ local defaults = {
     -- General settings
     mod_enabled = true,
     debug_mode = false,
+    cleanup_map_markers = false,         -- One-time cleanup of old map markers
     
     -- Detection settings
     base_detection_radius = 30,           -- How far NPCs can detect anomalies
     max_restrictions_length = 2048,       -- Max restriction string length
+    cache_rebuild_delay = 2.5,            -- Seconds to wait after surge before rebuilding cache (Arrival compat)
     
     -- Damage settings
-    enable_visual_damage_mult = true,     -- Use armor-based damage multipliers
+    enable_armor_damage_mult = true,      -- Use outfit-based damage multipliers
     immune_zero_miss_chance = true,       -- NPCs with 0% miss chance are immune
     
     -- Movement state multipliers
@@ -95,6 +97,13 @@ function on_mcm_load()
                 def = false,
                 hint = "mai_debug_mode",
             },
+            {
+                id = "cleanup_map_markers",
+                type = "check",
+                val = 1,
+                def = false,
+                hint = "mai_cleanup_map_markers",
+            },
             
             -- Detection Settings
             {
@@ -122,6 +131,16 @@ function on_mcm_load()
                 def = 2048,
                 hint = "mai_max_restrictions_length",
             },
+            {
+                id = "cache_rebuild_delay",
+                type = "track",
+                val = 2,
+                min = 0,
+                max = 5,
+                step = 0.5,
+                def = 2.5,
+                hint = "mai_cache_rebuild_delay",
+            },
             
             -- Damage Settings
             {
@@ -130,11 +149,11 @@ function on_mcm_load()
                 text = "ui_mcm_mai_damage_title"
             },
             {
-                id = "enable_visual_damage_mult",
+                id = "enable_armor_damage_mult",
                 type = "check",
                 val = 1,
                 def = true,
-                hint = "mai_enable_visual_damage_mult",
+                hint = "mai_enable_armor_damage_mult",
             },
             {
                 id = "immune_zero_miss_chance",

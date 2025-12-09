@@ -43,6 +43,13 @@
         <text>Enable debug logging to console. Shows detection, damage, and cache events.</text>
     </string>
     
+    <string id="ui_mcm_mai_cleanup_map_markers">
+        <text>Cleanup Old Map Markers</text>
+    </string>
+    <string id="ui_mcm_mai_cleanup_map_markers_desc">
+        <text>Remove anomaly markers left on the PDA map from previous MAI versions. Enable this, apply settings, then disable it again. One-time cleanup action.</text>
+    </string>
+    
     <!-- Detection Settings -->
     <string id="ui_mcm_mai_base_detection_radius">
         <text>Detection Radius</text>
@@ -58,12 +65,19 @@
         <text>Maximum length of restriction string per NPC. If exceeded, new anomalies won't be added. Default: 2048</text>
     </string>
     
-    <!-- Damage Settings -->
-    <string id="ui_mcm_mai_enable_visual_damage_mult">
-        <text>Armor-based Damage</text>
+    <string id="ui_mcm_mai_cache_rebuild_delay">
+        <text>Cache Rebuild Delay</text>
     </string>
-    <string id="ui_mcm_mai_enable_visual_damage_mult_desc">
-        <text>Apply damage multipliers based on NPC armor type. Different suits provide different protection.</text>
+    <string id="ui_mcm_mai_cache_rebuild_delay_desc">
+        <text>Seconds to wait after surge/psy-storm before rebuilding anomaly cache. Allows Arrival mod to finish respawning anomalies. Set to 0 if not using Arrival. Default: 2.5s</text>
+    </string>
+    
+    <!-- Damage Settings -->
+    <string id="ui_mcm_mai_enable_armor_damage_mult">
+        <text>Outfit-based Damage</text>
+    </string>
+    <string id="ui_mcm_mai_enable_armor_damage_mult_desc">
+        <text>Apply damage multipliers based on NPC's equipped outfit. Protection values are read directly from outfit configs (burn, shock, chemical, radiation, psy, strike). An exoskeleton with 0.7 shock protection takes only 30%% electric anomaly damage.</text>
     </string>
     
     <string id="ui_mcm_mai_immune_zero_miss_chance">

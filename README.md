@@ -1,190 +1,192 @@
-MAI – Mobs.Anomalies.Interaction
+# MAI – Mobs.Anomalies.Interaction
 
--РУССКИЙ
+## Version 2.0
 
-Долгое время в Anomaly была "проблема": НПС не избегали аномалий, и не получали от них урон. Mobs.Anomalies.Interaction (MAI) помогает решить эту проблему.
+An attempt to make NPCs interact with anomalies realistically - they will try to avoid them and can take damage from them.
 
-Кто автор?
+---
 
-- "База" обхода аномалий - Ник автора изначальной идеи я к сожалению уже не найду. Подглядел в скрипте ogse_anomaly_evader.script в моде OLR 3.0
+## What Does This Mod Do?
 
-- Список важных НПС взят из мода NPC Die For Real, автор TheMrDemonized
+For a long time in S.T.A.L.K.E.R. Anomaly, NPCs completely ignored anomalies - they walked straight through them and took no damage. MAI fixes this by:
 
-Что делает мод?
+1. **Pathfinding Restrictions** - NPCs detect nearby anomalies and avoid walking through them
+2. **Damage System** - NPCs can take damage from anomalies based on their rank and movement state
+3. **Armor Protection** - NPC outfit protection values affect anomaly damage taken
 
-Мод заставляет НПС ОБХОДИТЬ аномалии.
+---
 
-Поддержка
+## Features
 
-Если возникнет желание и возможность, можете поддержать меня следующими способами:
+### Rank-Based Behavior
 
-TON-Кошелек: UQBp9LQ1T7nj05EKdztDtod7220bhPxeVj_uoG8sAJWm7-V5
+Higher ranked NPCs are better at detecting and avoiding anomalies:
 
-Donationalerts: https://www.donationalerts.com/r/allc0r3
+| Rank | Miss Chance | Behavior |
+|------|-------------|----------|
+| Novice | 100% | Often walks into anomalies, always takes damage |
+| Trainee | 75% | Frequently misses anomalies |
+| Experienced | 50% | Average detection |
+| Professional | 25% | Good at avoiding anomalies |
+| Veteran+ | 0% | Always detects anomalies, immune to damage |
 
-Производительность
+### Movement State Multipliers
 
-Чем больше симуляционных НПС в онлайне, тем ниже производительность игры. При 100 онлайновых симуляционных НПС производительность падает примерно на 5 кадров в секунду. Все очень сильно зависит от ситуации, локации, и кол-ва аномалий вокруг НПС.
+NPC awareness depends on what they're doing:
 
-Краткое описание
+| State | Multiplier | Effect |
+|-------|------------|--------|
+| Standing | 0.3x | Very aware, rarely misses |
+| Walking | 0.6x | Observant |
+| Running | 1.2x | Might miss some |
+| Combat | 3.0x | Distracted, often misses |
 
-Квестовые НПС, напарники, торговцы и механики защищены от аномалий. Некоторые аномалии не наносят урон НПС (список будет при релизе), чтобы не усложнять НПС проход между аномалиями в трудных местах.
+### Community-Specific Behavior
 
-Некоторые из них:
+| Community | Evades? | Takes Damage? | Reason |
+|-----------|---------|---------------|--------|
+| **Sin (greh)** | No | No | Children of the Zone |
+| **Monolith** | Yes | No | Protected by the Monolith |
+| **Zombified** | No | Yes | Mindless, walk straight in |
+| **Companions** | No | No | Protected |
+| **Traders** | No | No | Protected |
+| **Everyone else** | Yes | By roll | Normal behavior |
 
-Жарки (часть) на Дикой территории в туннеле.
-Аномальные поля на Кордоне: возле тепловоза и деревни.
-Жарки на кладбище техники, Свалка.
-Все движущиеся аномалии.
+### Outfit-Based Damage Protection
 
-Качество обхода зависит от группировки, ранга и модели НПС.
+Damage is modified by NPC's equipped outfit protection values:
 
-Есть исключения:
+- **Electric anomalies** → shock_protection
+- **Fire/thermal anomalies** → burn_protection  
+- **Chemical anomalies** → chemical_burn_protection
+- **Gravity anomalies** → strike_protection
+- **Radiation anomalies** → radiation_protection
+- **Psy anomalies** → telepatic_protection
 
-Грех — дети зоны, поэтому аномалии их не замечают.
-Зомби-сталкеры - иммуны к урону от аномалий.
-Монолитовцы - их защищает Великий Монолит.
+Example: An exoskeleton with 0.7 shock protection reduces electric anomaly damage by 70%.
 
-Установка
+---
 
-Через Mod Organizer, порядок неважен.
+## Installation
 
-Совместимость
+Install via Mod Organizer 2. Load order doesn't matter, unless it conflicts with other files *(it should not)*.
 
-Совместимо со всем кроме модов которые включают урон от Аномалий для НПС.
-Улучшена поддержка New Levels (подземные локации добавлены в исключения).
-Улучшена поддержка DAO\Arrival (некоторые аномалии добавлены в исключения).
-Улучшена поддержка Intimidate Enemies Into Surrendering (при смене группировки у НПС – настройки его меняются на соответствующие)
-Улучшена поддержка Dynamic NPC Armor Visuals
-Поддержка модов на новые группировки: настройки берутся как для одиночки, новичка
-Поддержка модов на новые ранги: настройки берутся как для одиночки, новичка
+---
 
-Планы
+## Compatibility
 
-Вписать все аномалии, которые могут вызвать проблемы у НПС.
-Удалить аномалии, которые настроены с ошибкой и заспавнить на их места такие же, но уже без ошибок. (Будет отдельным аддоном, следовательно - по желанию)
-Добавить игнорирование аномалий в зависимости от модели НПС. - Готово! (осталось настроить)
-Исключить урон от аномалий для целей заданий. (Частично готово, квестодатель не получает урон от аномалий, осталось сделать для цели задания тоже самое)
-Еще оптимизировать производительность игры.
-Полноценное МСМ-меню.
-Поддержка еще большего кол-ва модов с новыми НПС, Аномалиями, Локациями
-Легендарные монстры, такие как контролёр и бюрер, также могут обходить аномалии. Полтергейст не получает урон от аномалий вовсе.
-Настройка получаемого урона для мутантов (всех)
-В идеале порт CAnomalyDetector из OGSR и CCustomZone getEnabled() вывести в скрипты
-Поддержка Анталогии 1.2 (хотя бы частичная)
+### Should be Compatible With:
+- **Arrival / DAO** - Cache rebuild is delayed after surge to wait for anomaly respawning
+- **New Levels** - Underground locations supported
+- **Dynamic NPC Armor Visuals** - Armor protection reads from actual equipped outfit
+- **New faction mods** - Unknown factions use default stalker settings
+- **New rank mods** - Unknown ranks use novice settings
 
-Почему стоит попробовать мод?
+### Not Compatible With:
+- Other mods that enable NPC anomaly damage (would conflict)
 
-Мод Mobs.Anomalies.Interaction (MAI) делает игру более реалистичной и интересной. НПС будут избегать опасных мест, что добавит разнообразия в прохождение игры.
+---
 
-Приятной игры!
+## MCM Settings
 
---Changelog:
+### General
+- **Enable Mod** - Toggle the entire mod on/off
+- **Debug Mode** - Enable detailed logging and death notifications
 
-1.01_Beta – 27.10.2024
+### Detection
+- **Detection Radius** - How far NPCs can detect anomalies (default: 30m)
+- **Max Restrictions Buffer** - Maximum pathfinding restriction string length
+- **Cache Rebuild Delay** - Seconds to wait after surge before rebuilding cache (for Arrival compatibility, default: 2.5s)
 
-Базовая поддержка смены визуала НПС и соответственно поддержка получаемого урона в зависимости от визуала (или полного игнорирования некоторых аномалий). Настроено (Сева Бандитов, Свободовцев)
-НПС не получают урон во время добивания раненных
-добавил в исключение Аномалии без радиуса в Рыжем Лесу (позже нужно справить все эти аномалии)
-Сделал переподписание онлайновых НПС после сна игрока
+### Damage
+- **Outfit-based Damage** - Use armor protection values for damage calculation
+- **Zero Miss Chance Immunity** - NPCs with 0% miss chance (veterans+) are immune to damage
 
+### Movement Multipliers
+- Standing, Walking, Running, Combat multipliers (adjustable)
 
+### Rank Miss Chances
+- Individual miss chance for each rank (0-100%)
 
+### Map Marker Cleanup
+- One-time cleanup of old "anomaly_disabled" map markers from previous MAI versions
 
-1.00_Beta– 25.10.2024
+---
 
-Первый выпуск
+## Performance
 
+v2.0 has been completely rewritten for better performance:
 
---ENG 
+- **Lightweight anomaly cache** - Rebuilt only after surge/psy-storm or level change
+- **Global update loop** - Single 2-second interval loop for all NPCs
+- **No per-NPC sessions** - Removed subscribe/unsubscribe overhead
+- **Throttled updates** - Each NPC updated at most once per second
 
-MAI – Mobs.Anomalies.Interaction
+With 100 online NPCs, expect minimal performance impact *(improved from v1.0)*.
 
-For a long time, Anomaly was a "problem": NPCs did not evade anomalies, and did not take damage from them. Mobs. Anomalies. Interaction (MAI) helps to solve this problem.
+---
 
-Who is the author?
+## Debug Mode
 
-Anomaly Evade - I have not found the nickname of the author of the original anomaly evade idea. Part of code from ogse_anomaly_evader.script script in OLR 3.0 mode
+When enabled, debug mode provides:
 
-List of important NPCs - taken from the NPC Die For Real mod, by TheMrDemonized
+- Console logging with `[MAI]` prefix for all actions
+- Categories: `[EVENT]`, `[CACHE]`, `[CONFIG]`, `[RESTRICT]`, `[DETECT]`, `[DAMAGE]`, `[IGNORE]`
+- In-game news notifications when NPCs are killed by anomalies
 
-What does the mod do?
+Example death notification:
+```
+[MAI DEBUG] sim_default_stalker_030721 (novice stalker) killed by zone_mine_electric while running
+```
 
-The mod forces NPCs to EVADE anomalies.
+---
 
-Donations
+## Credits
 
-If you have the desire and opportunity, you can support me in the following ways:
+- **Original anomaly evade concept** - From ogse_anomaly_evader.script in OLR 3.0
+- **Important NPC list** - From NPC Die For Real mod by TheMrDemonized
+- [**Original MAI mod**](https://www.moddb.com/addons/demonized-exes-mobsanomaliesinteraction-v10beta) bt allc0r3
 
-TON: UQBp9LQ1T7nj05EKdztDtod7220bhPxeVj_uoG8sAJWm7-V5
+---
 
-Donationalerts: https://www.donationalerts.com/r/allc0r3
+## Changelog
 
-Efficiency
+### 2.0 – December 2024
 
-The more simulation NPCs online, the lower the performance of the game. With 100 online simulation NPCs, performance drops by about 5 frames per second. Everything very much depends on the situation, location, and the number of anomalies around the NPC.
+**Complete Rewrite**
 
-Short description
+Architecture:
+- Removed per-NPC session tracking (subscribe/unsubscribe system)
+- Implemented lightweight anomaly cache with smart invalidation
+- Single global update loop (2s interval) instead of per-NPC timers
+- Cache rebuilds only on surge/psy-storm end or level change
 
-Quest NPCs, companions, merchants and mechanics are protected from anomalies. Some anomalies do not cause damage to NPCs (the list will be on release), made to avoid NPC stuck in anomalies.
+New Features:
+- Outfit-based damage protection system (reads actual outfit config values)
+- Movement state affects both detection and damage chance
+- Configurable rank miss chances via MCM
+- Community-specific behavior (greh, monolith, zombified)
+- Debug news messages for anomaly deaths
+- Map marker cleanup utility for old MAI versions
+- Cache rebuild delay for Arrival mod compatibility
 
-List (full i make on release):
+Performance:
+- Significantly reduced CPU usage
+- No more memory leaks from session tracking
+- Throttled per-NPC updates
 
-All moving anomalies.
-Anomaly fields on the Cordon: near the locomotive and the village.
-Thermal in tunnel. Wild Territory
+Compatibility:
+- Full Arrival/DAO support with delayed cache rebuild
+- Works with any modded outfits automatically
+- Proper engine-level damage enable/disable via set_enable_anomalies_damage()
 
-The quality of the evade depends on the community, rank, and model of the NPC.
+### 1.01_Beta – 27.10.2024
 
-There are exceptions:
+- Basic support for NPC visual changes and damage based on visual
+- NPCs don't take damage while finishing off wounded
+- Added anomalies without radius in Red Forest to exceptions
+- Re-subscription of online NPCs after player sleep
 
-Sin is the children of the zone, so the anomalies do not notice them.
-Zombie stalkers are immune to damage from anomalies.
-Monolith - they are protected by the Great Monolith.
+### 1.00_Beta – 25.10.2024
 
-Installation
-
-- Mod Organizer 2, the order is unimportant.
-
-Compatibility
-
-Compatible with everything except mods that include Anomaly damage for NPCs.
-Improved support for New Levels (underground locations added to exceptions).
-Improved support for DAO\Arrival (some anomalies added to exceptions).
-Improved support for Intimate Enemies Into Surrendering (when changing the community of NPCs, its settings change to the appropriate ones)
-Improved support for Dynamic NPC Armor Visuals
-Support for mods for new community: settings are taken for loner
-Support for mods for new ranks: settings are taken for beginner
-
-Plans
-
-Enter all the anomalies that can cause problems for the NPC.
-Remove anomalies that are configured with an error and put the same ones in their places, but without errors. (It will be a separate add-on, therefore - optional)
-Add anomaly ignoring depending on the NPC model. - It's done! (it remains to be configured)
-Off anomaly damage for mission purposes. (Partially finished, the taskgivers does not receive damage from anomalies, it remains to do the same for the purpose of the task)
-To optimize the performance of the game.
-A full-fledged MCM menu.
-Support for even more mods with new NPCs, Anomalies, Locations
-Legendary monsters such as the controller and burrer can also evade anomalies.
-The poltergeist does not take damage from anomalies at all.
-Adjusting the damage received for mutants (all)
-Ideally, the CAnomalyDetector port from OGSR and CCustomZone getEnabled() should be output to scripts
-Antalogy 1.2 support (at least partial)
-
-Why should I try the mod?
-
-The Mobs.Anomalies.Interaction (MAI) mod makes the game more realistic and interesting. NPCs will evade dangerous places, which will add variety to the game. Have a nice game!
-
---Changelog:
-
-1.01_Beta – 27.10.2024
-
-Basic support for changing the NPC's visual and, accordingly, support for damage received depending on the visual (or completely ignoring some anomalies). Set up (Sowing Bandits, Svobodovites)
-NPCs do not take damage while finishing off the wounded .
-Added Anomalies without radius in the Red Forest to the exception (later you need to fix all these anomalies)
-Did the re-signing of online NPCs after the player's sleep
-
-1.00_Beta– 25.10.2024
-
-Initial Release
-
+- Initial release

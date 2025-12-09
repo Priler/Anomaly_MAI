@@ -41,17 +41,50 @@ function mai_on_npc_death(victim, killer)
     -- Only log anomaly deaths
     if killer and IsAnomaly(killer) then
         local victim_name = victim:name() or "unknown"
+        local victim_community = "unknown"
         local victim_rank = "unknown"
+        local victim_state = "unknown"
         
         if IsStalker(victim) then
+            victim_community = victim:character_community() or "unknown"
             victim_rank = ranks.get_se_obj_rank_name(victim) or "unknown"
+            
+            -- Get movement state at death
+            if victim:best_enemy() then
+                victim_state = "combat"
+            else
+                local movement = victim:movement_type()
+                if movement == move.stand then
+                    victim_state = "standing"
+                elseif movement == move.walk then
+                    victim_state = "walking"
+                elseif movement == move.run then
+                    victim_state = "running"
+                end
+            end
         end
         
         local killer_name = killer:name() or "unknown_anomaly"
         local killer_section = killer:section() or "unknown"
         
-        printf("[MAI] NPC [%s] (rank: %s) KILLED by anomaly [%s] (%s)", 
-            victim_name, victim_rank, killer_name, killer_section)
+        -- Always log to console
+        printf("[MAI] NPC [%s] (community: %s, rank: %s, state: %s) KILLED by anomaly [%s] (%s)", 
+            victim_name, victim_community, victim_rank, victim_state, killer_name, killer_section)
+        
+        -- Show news message if debug mode enabled
+        if zz_allc0r3_mai_main.is_debug_enabled and zz_allc0r3_mai_main.is_debug_enabled() then
+            local news_text = string.format(
+                "[MAI DEBUG] %s (%s %s) killed by %s while %s",
+                victim_name, victim_rank, victim_community, killer_section, victim_state
+            )
+            
+            -- Use dynamic_news_helper if available, otherwise use basic news
+            if dynamic_news_helper then
+                dynamic_news_helper.send_tip(news_text, nil, nil, 5, "npc_death")
+            else
+                news_manager.send_tip(db.actor, news_text, nil, "default", 5000)
+            end
+        end
     end
 end
 
