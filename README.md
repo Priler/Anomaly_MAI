@@ -1,14 +1,12 @@
 # MAI – Mobs.Anomalies.Interaction
 
-## Version 2.0
-
 An attempt to make NPCs interact with anomalies realistically - they will try to avoid them and can take damage from them.
 
 ---
 
 ## What Does This Mod Do?
 
-For a long time in S.T.A.L.K.E.R. Anomaly, NPCs completely ignored anomalies - they walked straight through them and took no damage. MAI fixes this by:
+For a long time in S.T.A.L.K.E.R. Anomaly, NPCs completely ignored anomalies - they walked straight through them and took no damage. MAI tries to fix this by:
 
 1. **Pathfinding Restrictions** - NPCs detect nearby anomalies and avoid walking through them
 2. **Damage System** - NPCs can take damage from anomalies based on their rank and movement state

@@ -1,8 +1,7 @@
 --[[
     MAI MCM Options - Mod Configuration Menu integration
-    Version: 3.0
-    
-    Simplified configuration for the lightweight MAI system.
+
+    Configuration for the lightweight MAI system.
 --]]
 
 --------------------------------------------------------------------------------
@@ -19,6 +18,10 @@ local defaults = {
     base_detection_radius = 30,           -- How far NPCs can detect anomalies
     max_restrictions_length = 2048,       -- Max restriction string length
     cache_rebuild_delay = 2.5,            -- Seconds to wait after surge before rebuilding cache (Arrival compat)
+    
+    -- Effect radius settings
+    effect_radius = 300,                   -- NPCs outside this radius are protected from damage
+    restrictions_ignore_radius = true,     -- Apply pathfinding restrictions regardless of effect radius
     
     -- Damage settings
     enable_armor_damage_mult = true,      -- Use outfit-based damage multipliers
@@ -140,6 +143,23 @@ function on_mcm_load()
                 step = 0.5,
                 def = 2.5,
                 hint = "mai_cache_rebuild_delay",
+            },
+            {
+                id = "effect_radius",
+                type = "track",
+                val = 2,
+                min = 100,
+                max = 500,
+                step = 50,
+                def = 300,
+                hint = "mai_effect_radius",
+            },
+            {
+                id = "restrictions_ignore_radius",
+                type = "check",
+                val = 1,
+                def = true,
+                hint = "mai_restrictions_ignore_radius",
             },
             
             -- Damage Settings

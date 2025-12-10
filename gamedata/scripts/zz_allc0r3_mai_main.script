@@ -1,11 +1,12 @@
 --[[
-    MAI (Mutant/Anomaly Interaction) by AllC0r3
-    Version: 3.0 - Performance Rewrite
-    
+    MAI (Mutant/Anomaly Interaction) by Priler (original idea/mod by AllC0r3)
+    Version: 2.1
+
     Features:
     - Lightweight anomaly cache (rebuilt only after surge/psy-storm)
     - Simple pathfinding restrictions (no per-NPC session tracking)
     - Damage roll based on rank + movement state
+    - Effect radius system from Beef's NPCs Dies in Anomalies mod (configurable via MCM)
     - Arrival mod compatibility
     
     Design:
@@ -695,6 +696,10 @@ local function on_actor_update()
     
     -- Update all online stalkers
     local count = 0
+    local effect_radius = get_mcm_setting("effect_radius", 300)
+    local restrictions_ignore_radius = get_mcm_setting("restrictions_ignore_radius", true)
+    local actor_pos = db.actor:position()
+    
     for id, npc in pairs(db.OnlineStalkers) do
         -- some mods store just the id here
         if type(npc) == "number" then
@@ -703,10 +708,23 @@ local function on_actor_update()
 
         -- Skip anything that is still not a valid game object
         if npc and npc.alive and npc:alive() and IsStalker(npc) then
-            -- Configure damage enable/disable at engine level
-            configure_npc_anomaly_interaction(npc)
-            -- Add pathfinding restrictions
-            update_npc_restrictions(npc)
+            local npc_pos = npc:position()
+            local distance = npc_pos:distance_to(actor_pos)
+            local within_radius = distance <= effect_radius
+            
+            -- Damage: configure based on community only within radius
+            -- Outside radius: always protect NPC from damage
+            if within_radius then
+                configure_npc_anomaly_interaction(npc)
+            else
+                npc:set_enable_anomalies_damage(false)
+            end
+            
+            -- Restrictions: apply within radius, or everywhere if setting enabled
+            if within_radius or restrictions_ignore_radius then
+                update_npc_restrictions(npc)
+            end
+            
             count = count + 1
         end
     end
@@ -750,6 +768,11 @@ end
 
 local function on_game_load()
     dbg_log("EVENT", "Game loaded, rebuilding cache")
+    
+    -- Enable anomaly damage for AI globally at engine level
+    exec_console_cmd("ai_die_in_anomaly 1")
+    dbg_log("EVENT", "Enabled ai_die_in_anomaly 1")
+    
     invalidate_cache()
     npc_last_update = {} -- Clear throttle tracking
 end
@@ -789,5 +812,5 @@ function on_game_start()
     RegisterScriptCallback("actor_on_level_changed", on_level_changed)
     
     local arrival_status = is_arrival_loaded() and "detected" or "not detected"
-    printf("[MAI] v3.0 loaded (lightweight) - Arrival: %s", arrival_status)
+    printf("[MAI] v2.0 loaded - Arrival: %s", arrival_status)
 end
