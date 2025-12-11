@@ -112,26 +112,6 @@ local function is_arrival_anomaly_active(anom_id, level_name)
     return true
 end
 
-local function is_anomaly_enabled(anomaly_obj)
-    if not anomaly_obj then return false end
-    
-    -- Check common anomaly disable methods
-    local cls = anomaly_obj:clsid()
-    
-    -- Try to check if anomaly is disabled via game flag
-    if anomaly_obj.disabled and anomaly_obj:disabled() then
-        return false
-    end
-    
-    -- Check if anomaly has no "online" state
-    local se_obj = alife_object(anomaly_obj:id())
-    if se_obj and se_obj.disabled then
-        return false
-    end
-    
-    return true
-end
-
 --------------------------------------------------------------------------------
 -- Anomaly Cache System
 --------------------------------------------------------------------------------
@@ -247,47 +227,40 @@ end
 -- Check if NPC should have anomaly damage ENABLED at engine level
 -- Returns false for NPCs that should NEVER take damage (callback won't fire)
 -- Returns true for NPCs that MIGHT take damage (callback will fire, then we roll)
+-- Returns: enabled (bool), reason (string)
+-- Note: Caller must verify npc is valid, alive, and IsStalker before calling
 local function should_enable_anomaly_damage(npc)
-    if not npc or not npc:alive() then return false end
-    if not IsStalker(npc) then return false end
-    
     local community = npc:character_community()
     
     -- Full ignore - no damage (greh)
     if zz_allc0r3_mai_npc_settings.mai_always_full_ignore_community[community] then
-        dbg_log("CONFIG", "NPC [%s] damage=false (full ignore community: %s)", npc:name(), community)
-        return false
+        return false, "full_ignore_community"
     end
     
     -- No damage communities - they evade but don't take damage (monolith)
     if zz_allc0r3_mai_npc_settings.mai_no_damage_community[community] then
-        dbg_log("CONFIG", "NPC [%s] damage=false (no damage community: %s)", npc:name(), community)
-        return false
+        return false, "no_damage_community"
     end
     
     -- Important NPCs - no damage
     if is_ignore_npc(npc) then 
-        dbg_log("CONFIG", "NPC [%s] damage=false (is_ignore_npc)", npc:name())
-        return false 
+        return false, "ignore_npc"
     end
     
     -- Companions - no damage
     if is_companion_npc(npc) then 
-        dbg_log("CONFIG", "NPC [%s] damage=false (companion)", npc:name())
-        return false 
+        return false, "companion"
     end
     
     -- Everyone else can take damage (zombied, stalkers, etc.)
     -- The actual damage is determined by roll in should_npc_take_damage()
-    return true
+    return true, "normal"
 end
 
 -- Check if NPC should get pathfinding restrictions (try to avoid anomalies)
 -- Returns false for NPCs that should walk into anomalies
+-- Note: Caller must verify npc is valid, alive, and IsStalker before calling
 local function should_add_restrictions(npc)
-    if not npc or not npc:alive() then return false end
-    if not IsStalker(npc) then return false end
-    
     local community = npc:character_community()
     
     -- Full ignore - no restrictions (greh)
@@ -315,47 +288,48 @@ local function configure_npc_anomaly_interaction(npc)
     if not npc or not npc:alive() then return end
     if not IsStalker(npc) then return end
     
-    local should_damage = should_enable_anomaly_damage(npc)
+    local should_damage, reason = should_enable_anomaly_damage(npc)
     npc:set_enable_anomalies_damage(should_damage)
     
-    dbg_log("CONFIG", "NPC [%s] community [%s] damage=%s", 
-        npc:name(), npc:character_community(), tostring(should_damage))
+    dbg_log("CONFIG", "NPC [%s] community [%s] damage=%s (%s)", 
+        npc:name(), npc:character_community(), tostring(should_damage), reason)
 end
 
 --------------------------------------------------------------------------------
 -- Rank and Movement State
 --------------------------------------------------------------------------------
 
+-- Cached rank settings (avoid recreating tables on every call)
+local RANK_MCM_KEYS = {
+    ["novice"] = "rank_novice_miss_chance",
+    ["trainee"] = "rank_trainee_miss_chance",
+    ["experienced"] = "rank_experienced_miss_chance",
+    ["professional"] = "rank_professional_miss_chance",
+    ["veteran"] = "rank_veteran_miss_chance",
+    ["expert"] = "rank_expert_miss_chance",
+    ["master"] = "rank_master_miss_chance",
+    ["legend"] = "rank_legend_miss_chance"
+}
+
+local RANK_DEFAULTS = {
+    ["novice"] = 100,
+    ["trainee"] = 75,
+    ["experienced"] = 50,
+    ["professional"] = 25,
+    ["veteran"] = 0,
+    ["expert"] = 0,
+    ["master"] = 0,
+    ["legend"] = 0
+}
+
 function get_rank_miss_chance(npc)
     if not npc then return 50 end
     
-    local rank = ranks.get_se_obj_rank_name(npc)
+    local rank = ranks and ranks.get_se_obj_rank_name(npc) or nil
     if not rank then rank = "novice" end
     
-    local rank_settings = {
-        ["novice"] = "rank_novice_miss_chance",
-        ["trainee"] = "rank_trainee_miss_chance",
-        ["experienced"] = "rank_experienced_miss_chance",
-        ["professional"] = "rank_professional_miss_chance",
-        ["veteran"] = "rank_veteran_miss_chance",
-        ["expert"] = "rank_expert_miss_chance",
-        ["master"] = "rank_master_miss_chance",
-        ["legend"] = "rank_legend_miss_chance"
-    }
-    
-    local defaults = {
-        ["novice"] = 100,
-        ["trainee"] = 75,
-        ["experienced"] = 50,
-        ["professional"] = 25,
-        ["veteran"] = 0,
-        ["expert"] = 0,
-        ["master"] = 0,
-        ["legend"] = 0
-    }
-    
-    local setting_key = rank_settings[rank] or "rank_novice_miss_chance"
-    local default_val = defaults[rank] or 100
+    local setting_key = RANK_MCM_KEYS[rank] or "rank_novice_miss_chance"
+    local default_val = RANK_DEFAULTS[rank] or 100
     
     return get_mcm_setting(setting_key, default_val)
 end
@@ -408,7 +382,7 @@ local function get_nearby_anomalies(npc_pos, radius)
     return result
 end
 
-local function update_npc_restrictions(npc)
+local function update_npc_restrictions(npc, detection_radius)
     if not should_add_restrictions(npc) then return end
     
     local id = npc:id()
@@ -421,7 +395,7 @@ local function update_npc_restrictions(npc)
     npc_last_update[id] = current_time
     
     local npc_pos = npc:position()
-    local radius = get_mcm_setting("base_detection_radius", 30)
+    local radius = detection_radius or get_mcm_setting("base_detection_radius", 30)
     local nearby = get_nearby_anomalies(npc_pos, radius)
     
     if #nearby == 0 then return end
@@ -483,9 +457,11 @@ function should_npc_take_damage(npc, anomaly)
         return false
     end
     
+    -- Get rank miss chance once (used multiple times below)
+    local miss_chance = get_rank_miss_chance(npc)
+    
     -- Immunity for 0% miss chance (veterans+)
     if get_mcm_setting("immune_zero_miss_chance", true) then
-        local miss_chance = get_rank_miss_chance(npc)
         if miss_chance == 0 then
             dbg_log("DAMAGE", "NPC [%s] immune (0%% miss chance), blocking damage", npc:name())
             return false
@@ -493,7 +469,6 @@ function should_npc_take_damage(npc, anomaly)
     end
     
     -- Roll for damage based on rank + state
-    local miss_chance = get_rank_miss_chance(npc)
     local state_mult = get_movement_state_multiplier(npc)
     local damage_chance = math.floor(miss_chance * state_mult)
     
@@ -507,7 +482,7 @@ function should_npc_take_damage(npc, anomaly)
     local takes_damage = roll <= damage_chance
     
     local state = get_movement_state_name(npc)
-    local rank = ranks.get_se_obj_rank_name(npc) or "unknown"
+    local rank = ranks and ranks.get_se_obj_rank_name(npc) or "unknown"
     
     if takes_damage then
         dbg_log("DAMAGE", "NPC [%s] (rank: %s, state: %s) HIT by [%s] (roll: %d <= %d%%)", 
@@ -524,8 +499,8 @@ end
 -- Armor Protection System
 --------------------------------------------------------------------------------
 
--- Map anomaly patterns to protection stats
-local anomaly_protection_map = {
+-- Map anomaly patterns to protection stats (for pattern matching)
+local ANOMALY_PROTECTION_PATTERNS = {
     -- Electric anomalies
     { pattern = "electra",      protection = "shock_protection" },
     { pattern = "electric",     protection = "shock_protection" },
@@ -563,17 +538,30 @@ local anomaly_protection_map = {
     { pattern = "telepatic",    protection = "telepatic_protection" },
 }
 
+-- Cache for already-resolved anomaly sections (O(1) lookup after first hit)
+local anomaly_protection_cache = {}
+
 -- Get protection type for an anomaly
 local function get_anomaly_protection_type(anomaly_section)
     if not anomaly_section then return nil end
     
+    -- Check cache first
+    local cached = anomaly_protection_cache[anomaly_section]
+    if cached ~= nil then
+        return cached ~= false and cached or nil
+    end
+    
+    -- Pattern match and cache result
     local section_lower = anomaly_section:lower()
-    for _, mapping in ipairs(anomaly_protection_map) do
+    for _, mapping in ipairs(ANOMALY_PROTECTION_PATTERNS) do
         if sf(section_lower, mapping.pattern) then
+            anomaly_protection_cache[anomaly_section] = mapping.protection
             return mapping.protection
         end
     end
     
+    -- Cache negative result too (false means "no match found")
+    anomaly_protection_cache[anomaly_section] = false
     return nil
 end
 
@@ -682,9 +670,23 @@ end
 -- Global Update Loop
 --------------------------------------------------------------------------------
 
+-- Check if current level should be ignored
+local function is_ignore_level()
+    local current_level = level.name()
+    return zz_allc0r3_mai_location_settings and 
+           zz_allc0r3_mai_location_settings.mai_always_ignore_levels and
+           zz_allc0r3_mai_location_settings.mai_always_ignore_levels[current_level]
+end
+
 local function on_actor_update()
     if not is_mod_enabled() then return end
     if surge_started() then return end
+    
+    -- Check if db.actor is valid
+    if not db.actor then return end
+    
+    -- Skip ignored levels (underground labs, etc.)
+    if is_ignore_level() then return end
     
     local current_time = time_global()
     if current_time < global_update_timer then return end
@@ -694,12 +696,13 @@ local function on_actor_update()
     -- Ensure cache is valid
     ensure_cache()
     
-    -- Update all online stalkers
-    local count = 0
+    -- Cache MCM settings for this update cycle
     local effect_radius = get_mcm_setting("effect_radius", 300)
     local restrictions_ignore_radius = get_mcm_setting("restrictions_ignore_radius", true)
+    local detection_radius = get_mcm_setting("base_detection_radius", 30)
     local actor_pos = db.actor:position()
     
+    -- Update all online stalkers
     for id, npc in pairs(db.OnlineStalkers) do
         -- some mods store just the id here
         if type(npc) == "number" then
@@ -722,10 +725,8 @@ local function on_actor_update()
             
             -- Restrictions: apply within radius, or everywhere if setting enabled
             if within_radius or restrictions_ignore_radius then
-                update_npc_restrictions(npc)
+                update_npc_restrictions(npc, detection_radius)
             end
-            
-            count = count + 1
         end
     end
 end
@@ -784,12 +785,39 @@ local function on_level_changed()
 end
 
 -- Cleanup when NPC goes offline
-local function on_npc_net_destroy(npc_or_id)
-    local id = npc_or_id
-    if type(npc_or_id) ~= "number" then
-        id = npc_or_id:id()
+local function on_npc_net_destroy(npc)
+    local id
+    if type(npc) == "number" then
+        id = npc
+    else
+        id = npc:id()
+        -- Try to remove restrictions before NPC goes offline
+        if npc and npc.remove_restrictions then
+            pcall(function()
+                npc:remove_restrictions("", npc:in_restrictions() or "")
+            end)
+        end
     end
     npc_last_update[id] = nil
+end
+
+-- Configure NPC when it spawns online
+local function on_npc_net_spawn(npc)
+    if not is_mod_enabled() then return end
+    if not npc then return end
+    if not IsStalker(npc) then return end
+    if not npc:alive() then return end
+    
+    -- Skip ignored levels (check once, same result as update loop will get)
+    if is_ignore_level() then return end
+    
+    -- Skip if no anomalies cached on this level
+    if #anomaly_cache == 0 and cache_valid then return end
+    
+    -- Configure damage settings immediately
+    configure_npc_anomaly_interaction(npc)
+    
+    dbg_log("SPAWN", "NPC [%s] spawned, configured anomaly interaction", npc:name())
 end
 
 --------------------------------------------------------------------------------
@@ -803,6 +831,7 @@ function on_game_start()
     RegisterScriptCallback("actor_on_update", on_actor_update)
     RegisterScriptCallback("on_option_change", on_option_change)
     RegisterScriptCallback("npc_on_net_destroy", on_npc_net_destroy)
+    RegisterScriptCallback("npc_on_net_spawn", on_npc_net_spawn)
     
     -- Cache invalidation callbacks
     RegisterScriptCallback("surge_manager_end_surge", on_surge_end)

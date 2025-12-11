@@ -1,13 +1,10 @@
 --[[
     MAI NPC Script - Damage handling
-    Version: 3.0
     
     This script handles:
     - NPC damage from anomalies (decides if damage should apply)
     - Damage multiplier based on armor
 --]]
-
-local sn = script_name()
 
 --------------------------------------------------------------------------------
 -- Damage Handler
@@ -47,7 +44,7 @@ function mai_on_npc_death(victim, killer)
         
         if IsStalker(victim) then
             victim_community = victim:character_community() or "unknown"
-            victim_rank = ranks.get_se_obj_rank_name(victim) or "unknown"
+            victim_rank = ranks and ranks.get_se_obj_rank_name(victim) or "unknown"
             
             -- Get movement state at death
             if victim:best_enemy() then
