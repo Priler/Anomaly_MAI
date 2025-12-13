@@ -7,6 +7,54 @@
 --]]
 
 --------------------------------------------------------------------------------
+-- Local Helper Functions (safety net checks)
+--------------------------------------------------------------------------------
+
+-- Direct companion check - simple and reliable like Beef's mod
+local function is_companion(npc)
+    if not npc then return false end
+    
+    -- Primary check: infoportion (same as Beef's mod)
+    if npc:has_info("npcx_is_companion") then
+        return true
+    end
+    
+    -- Secondary check: axr_companions squad list
+    if axr_companions and axr_companions.companion_squads then
+        local npc_id = npc:id()
+        for squad_id, _ in pairs(axr_companions.companion_squads) do
+            local squad = squad_id and alife_object(squad_id)
+            if squad then
+                for member in squad:squad_members() do
+                    if member and member.id == npc_id then
+                        return true
+                    end
+                end
+            end
+        end
+    end
+    
+    return false
+end
+
+-- Check for important/quest NPCs (traders, story NPCs)
+local function is_important_npc(npc)
+    if not npc then return false end
+    
+    -- Trader check
+    if IsTrader and IsTrader(npc) then
+        return true
+    end
+    
+    -- Story ID check (quest-critical NPCs)
+    if get_object_story_id and get_object_story_id(npc:id()) then
+        return true
+    end
+    
+    return false
+end
+
+--------------------------------------------------------------------------------
 -- Damage Handler
 --------------------------------------------------------------------------------
 
@@ -18,7 +66,20 @@ function mai_on_npc_before_hit(npc, shit, bone_id, flags)
     
     local anomaly = shit.draftsman
     
-    -- Check if NPC should take damage
+    -- SAFETY NET: Direct companion check (like Beef's mod)
+    -- This runs even if set_enable_anomalies_damage failed
+    if is_companion(npc) then
+        flags.ret_value = false
+        return
+    end
+    
+    -- SAFETY NET: Important NPC check
+    if is_important_npc(npc) then
+        flags.ret_value = false
+        return
+    end
+    
+    -- Check if NPC should take damage (rank/state roll, surge check, etc.)
     if not zz_allc0r3_mai_main.should_npc_take_damage(npc, anomaly) then
         flags.ret_value = false
         return
