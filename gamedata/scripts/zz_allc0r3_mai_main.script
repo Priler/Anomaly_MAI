@@ -16,6 +16,8 @@
     - Damage callback decides if NPC should take damage
 --]]
 
+
+
 --------------------------------------------------------------------------------
 -- Local aliases for performance
 --------------------------------------------------------------------------------
@@ -221,7 +223,79 @@ local function is_ignore_npc(npc)
 end
 
 local function is_companion_npc(npc)
-    return npc and npc:has_info("npcx_is_companion")
+    if not npc then return false end
+    
+    -- Method 1: Standard companion info portion
+    if npc:has_info("npcx_is_companion") then
+        return true
+    end
+    
+    -- Method 2: Check axr_companions module directly
+    if axr_companions and axr_companions.companion_squads then
+        local npc_id = npc:id()
+        for squad_id, _ in pairs(axr_companions.companion_squads) do
+            local squad = squad_id and alife_object(squad_id)
+            if squad then
+                for member in squad:squad_members() do
+                    if member and member.id == npc_id then
+                        return true
+                    end
+                end
+            end
+        end
+    end
+    
+    return false
+end
+
+-- Check if NPC is an escort/task target that should be protected
+local function is_task_target_npc(npc)
+    if not npc then return false end
+    
+    local npc_id = npc:id()
+    
+    -- Check if NPC has task-related infoportions
+    -- These are given to NPCs that are quest targets (escort, rescue, etc.)
+    if npc:has_info("npcx_beh_escort_target") then
+        return true
+    end
+    
+    -- Check task manager for active escort/delivery tasks involving this NPC
+    if task_manager and task_manager.get_task_manager then
+        local tm = task_manager.get_task_manager()
+        if tm and tm.task_info then
+            for task_id, task_data in pairs(tm.task_info) do
+                -- Check if task has this NPC as target
+                if task_data.target_id and task_data.target_id == npc_id then
+                    return true
+                end
+                -- Check task type for escort-related tasks
+                if task_data.type and (task_data.type == "escort" or task_data.type == "defend") then
+                    if task_data.npc_id and task_data.npc_id == npc_id then
+                        return true
+                    end
+                end
+            end
+        end
+    end
+    
+    -- Check if NPC is in actor's squad (temporary companion via task)
+    local actor_squad = db.actor and get_object_squad(db.actor)
+    if actor_squad then
+        for member in actor_squad:squad_members() do
+            if member and member.id == npc_id then
+                return true
+            end
+        end
+    end
+    
+    -- Check for reach_task scheme (NPC following actor for quest)
+    local st = npc:get_script_params and npc:get_script_params()
+    if st and st.active_scheme == "reach_task" then
+        return true
+    end
+    
+    return false
 end
 
 -- Check if NPC should have anomaly damage ENABLED at engine level
@@ -252,6 +326,11 @@ local function should_enable_anomaly_damage(npc)
         return false, "companion"
     end
     
+    -- Task/escort targets - no damage
+    if is_task_target_npc(npc) then
+        return false, "task_target"
+    end
+    
     -- Everyone else can take damage (zombied, stalkers, etc.)
     -- The actual damage is determined by roll in should_npc_take_damage()
     return true, "normal"
@@ -276,8 +355,11 @@ local function should_add_restrictions(npc)
     -- Important NPCs - no restrictions (they're protected anyway)
     if is_ignore_npc(npc) then return false end
     
-    -- Companions - no restrictions
+    -- Companions - no restrictions (they follow player, restrictions might interfere)
     if is_companion_npc(npc) then return false end
+    
+    -- Task targets - no restrictions (they need to follow player/path)
+    if is_task_target_npc(npc) then return false end
     
     -- Everyone else gets restrictions (monolith, stalkers, etc.)
     return true
@@ -371,6 +453,10 @@ end
 -- Pathfinding Restrictions
 --------------------------------------------------------------------------------
 
+-- Track NPC positions to detect if they're stuck
+local npc_positions = {}
+local npc_stuck_count = {}
+
 local function get_nearby_anomalies(npc_pos, radius)
     local result = {}
     for _, anom in ipairs(anomaly_cache) do
@@ -380,6 +466,48 @@ local function get_nearby_anomalies(npc_pos, radius)
         end
     end
     return result
+end
+
+-- Check if NPC is stuck (hasn't moved significantly)
+local function check_npc_stuck(npc, current_pos)
+    local id = npc:id()
+    local last_pos = npc_positions[id]
+    
+    if not last_pos then
+        npc_positions[id] = current_pos
+        npc_stuck_count[id] = 0
+        return false
+    end
+    
+    local distance_moved = last_pos:distance_to(current_pos)
+    npc_positions[id] = current_pos
+    
+    -- If NPC moved less than 0.5 meters, increment stuck counter
+    if distance_moved < 0.5 then
+        npc_stuck_count[id] = (npc_stuck_count[id] or 0) + 1
+    else
+        npc_stuck_count[id] = 0
+    end
+    
+    -- Consider stuck after 5 consecutive checks with no movement (10 seconds)
+    return npc_stuck_count[id] >= 5
+end
+
+-- Clear restrictions for NPC
+local function clear_npc_restrictions(npc)
+    if not npc then return end
+    
+    local current_restrictions = npc:in_restrictions() or ""
+    if current_restrictions ~= "" then
+        pcall(function()
+            npc:remove_restrictions("", current_restrictions)
+        end)
+        dbg_log("STUCK", "Cleared restrictions for stuck NPC [%s]", npc:name())
+    end
+    
+    -- Reset stuck counter
+    local id = npc:id()
+    npc_stuck_count[id] = 0
 end
 
 local function update_npc_restrictions(npc, detection_radius)
@@ -395,6 +523,13 @@ local function update_npc_restrictions(npc, detection_radius)
     npc_last_update[id] = current_time
     
     local npc_pos = npc:position()
+    
+    -- Check if NPC is stuck and clear restrictions if so
+    if check_npc_stuck(npc, npc_pos) then
+        clear_npc_restrictions(npc)
+        return -- Don't add new restrictions this cycle, give NPC a chance to move
+    end
+    
     local radius = detection_radius or get_mcm_setting("base_detection_radius", 30)
     local nearby = get_nearby_anomalies(npc_pos, radius)
     
@@ -403,6 +538,14 @@ local function update_npc_restrictions(npc, detection_radius)
     -- Get current restrictions
     local current_restrictions = npc:in_restrictions() or ""
     local max_len = get_mcm_setting("max_restrictions_length", 2048)
+    
+    -- If restrictions are getting too long, clear some old ones
+    if current_restrictions:len() > max_len * 0.8 then
+        dbg_log("RESTRICT", "NPC [%s] restrictions near limit (%d), clearing", 
+            npc:name(), current_restrictions:len())
+        clear_npc_restrictions(npc)
+        current_restrictions = ""
+    end
     
     -- Find anomalies not already in restrictions
     local to_add = {}
@@ -776,12 +919,16 @@ local function on_game_load()
     
     invalidate_cache()
     npc_last_update = {} -- Clear throttle tracking
+    npc_positions = {}   -- Clear position tracking
+    npc_stuck_count = {} -- Clear stuck counters
 end
 
 local function on_level_changed()
     dbg_log("EVENT", "Level changed, invalidating cache")
     invalidate_cache()
     npc_last_update = {}
+    npc_positions = {}
+    npc_stuck_count = {}
 end
 
 -- Cleanup when NPC goes offline
@@ -799,6 +946,8 @@ local function on_npc_net_destroy(npc)
         end
     end
     npc_last_update[id] = nil
+    npc_positions[id] = nil
+    npc_stuck_count[id] = nil
 end
 
 -- Configure NPC when it spawns online
