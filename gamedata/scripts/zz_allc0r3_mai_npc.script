@@ -94,10 +94,19 @@ end
 --------------------------------------------------------------------------------
 
 function mai_on_npc_death(victim, killer)
+    -- Always log that callback fired for debugging
+    printf("[MAI] Death callback fired - victim: %s, killer: %s", 
+        victim and victim:name() or "nil", 
+        killer and killer:name() or "nil")
+    
     if not victim then return end
     
+    -- Check if killer is anomaly
+    local is_anomaly = killer and IsAnomaly(killer)
+    printf("[MAI] IsAnomaly check: %s", tostring(is_anomaly))
+    
     -- Only log anomaly deaths
-    if killer and IsAnomaly(killer) then
+    if is_anomaly then
         local victim_name = victim:name() or "unknown"
         local victim_community = "unknown"
         local victim_rank = "unknown"
@@ -130,17 +139,22 @@ function mai_on_npc_death(victim, killer)
             victim_name, victim_community, victim_rank, victim_state, killer_name, killer_section)
         
         -- Show news message if debug mode enabled
-        if zz_allc0r3_mai_main.is_debug_enabled and zz_allc0r3_mai_main.is_debug_enabled() then
+        local debug_enabled = zz_allc0r3_mai_main and zz_allc0r3_mai_main.is_debug_enabled and zz_allc0r3_mai_main.is_debug_enabled()
+        printf("[MAI] Debug enabled for news: %s", tostring(debug_enabled))
+        
+        if debug_enabled then
             local news_text = string.format(
-                "[MAI DEBUG] %s (%s %s) killed by %s while %s",
+                "[MAI] %s (%s %s) killed by %s while %s",
                 victim_name, victim_rank, victim_community, killer_section, victim_state
             )
             
-            -- Use dynamic_news_helper if available, otherwise use basic news
-            if dynamic_news_helper then
+            -- Try multiple methods to show news
+            if dynamic_news_helper and dynamic_news_helper.send_tip then
                 dynamic_news_helper.send_tip(news_text, nil, nil, 5, "npc_death")
-            else
+            elseif news_manager and news_manager.send_tip then
                 news_manager.send_tip(db.actor, news_text, nil, "default", 5000)
+            elseif actor_menu and actor_menu.set_msg then
+                actor_menu.set_msg(1, news_text, 5)
             end
         end
     end

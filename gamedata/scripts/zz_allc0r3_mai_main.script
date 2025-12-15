@@ -42,6 +42,7 @@ local UPDATE_INTERVAL = 2000 -- Check all NPCs every 2 seconds
 
 -- Debug flag cache
 local cached_debug_mode = false
+local cached_verbose_debug = false
 local cached_mod_enabled = true
 
 -- Track last restriction add time per NPC to avoid spam
@@ -64,18 +65,28 @@ end
 
 local function is_mod_enabled() return cached_mod_enabled end
 function is_debug_enabled() return cached_debug_mode end
+local function is_verbose_debug() return cached_verbose_debug end
 
 local function update_mcm_cache()
     cached_mod_enabled = get_mcm_setting("mod_enabled", true)
     cached_debug_mode = get_mcm_setting("debug_mode", false)
+    cached_verbose_debug = get_mcm_setting("verbose_debug", false)
 end
 
 --------------------------------------------------------------------------------
 -- Debug Logging
 --------------------------------------------------------------------------------
 
+-- Basic debug log (restrictions, damage, deaths - important stuff)
 local function dbg_log(category, format, ...)
     if not is_debug_enabled() then return end
+    local msg = string.format(format, ...)
+    printf("[%s][MAI][%s] %s", time_global(), category, msg)
+end
+
+-- Verbose debug log (update loop, cache, config - spammy stuff)
+local function dbg_verbose(category, format, ...)
+    if not is_verbose_debug() then return end
     local msg = string.format(format, ...)
     printf("[%s][MAI][%s] %s", time_global(), category, msg)
 end
@@ -133,7 +144,7 @@ local function rebuild_anomaly_cache()
     
     local fields = bind_anomaly_field.fields_by_names
     if not fields then 
-        dbg_log("CACHE", "No anomaly fields found")
+        dbg_verbose("CACHE", "No anomaly fields found")
         cache_valid = true
         return 
     end
@@ -178,13 +189,13 @@ local function rebuild_anomaly_cache()
     end
     
     cache_valid = true
-    dbg_log("CACHE", "Rebuilt anomaly cache: %d anomalies, %d skipped (level: %s)", count, skipped, level_name)
+    dbg_verbose("CACHE", "Rebuilt anomaly cache: %d anomalies, %d skipped (level: %s)", count, skipped, level_name)
     printf("[MAI] Anomaly cache rebuilt: %d anomalies on %s", count, level_name)
 end
 
 local function invalidate_cache()
     cache_valid = false
-    dbg_log("CACHE", "Cache invalidated")
+    dbg_verbose("CACHE", "Cache invalidated")
 end
 
 local function ensure_cache()
@@ -204,19 +215,19 @@ local function is_ignore_npc(npc)
     local profile = npc:profile_name()
     
     if zz_allc0r3_mai_npc_settings.demonized_ignore_npc[section] then
-        dbg_log("IGNORE", "NPC [%s] ignored by section [%s]", npc:name(), section)
+        dbg_verbose("IGNORE", "NPC [%s] ignored by section [%s]", npc:name(), section)
         return true
     end
     if zz_allc0r3_mai_npc_settings.demonized_ignore_npc[profile] then
-        dbg_log("IGNORE", "NPC [%s] ignored by profile [%s]", npc:name(), profile)
+        dbg_verbose("IGNORE", "NPC [%s] ignored by profile [%s]", npc:name(), profile)
         return true
     end
     if get_object_story_id(id) then
-        dbg_log("IGNORE", "NPC [%s] ignored by story_id [%s]", npc:name(), get_object_story_id(id))
+        dbg_verbose("IGNORE", "NPC [%s] ignored by story_id [%s]", npc:name(), get_object_story_id(id))
         return true
     end
     if IsTrader(npc) then
-        dbg_log("IGNORE", "NPC [%s] ignored - is trader", npc:name())
+        dbg_verbose("IGNORE", "NPC [%s] ignored - is trader", npc:name())
         return true
     end
     return false
@@ -226,24 +237,29 @@ local function is_companion_npc(npc)
     if not npc then return false end
     
     -- Method 1: Standard companion info portion
-    if npc:has_info("npcx_is_companion") then
+    local ok, has_info = pcall(function() return npc:has_info("npcx_is_companion") end)
+    if ok and has_info then
         return true
     end
     
     -- Method 2: Check axr_companions module directly
-    if axr_companions and axr_companions.companion_squads then
-        local npc_id = npc:id()
-        for squad_id, _ in pairs(axr_companions.companion_squads) do
-            local squad = squad_id and alife_object(squad_id)
-            if squad then
-                for member in squad:squad_members() do
-                    if member and member.id == npc_id then
-                        return true
+    local ok2, result = pcall(function()
+        if axr_companions and axr_companions.companion_squads then
+            local npc_id = npc:id()
+            for squad_id, _ in pairs(axr_companions.companion_squads) do
+                local squad = squad_id and alife_object(squad_id)
+                if squad then
+                    for member in squad:squad_members() do
+                        if member and member.id == npc_id then
+                            return true
+                        end
                     end
                 end
             end
         end
-    end
+        return false
+    end)
+    if ok2 and result then return true end
     
     return false
 end
@@ -256,44 +272,61 @@ local function is_task_target_npc(npc)
     
     -- Check if NPC has task-related infoportions
     -- These are given to NPCs that are quest targets (escort, rescue, etc.)
-    if npc:has_info("npcx_beh_escort_target") then
+    local has_escort_info = pcall(function() return npc:has_info("npcx_beh_escort_target") end)
+    if has_escort_info and npc:has_info("npcx_beh_escort_target") then
         return true
     end
     
     -- Check task manager for active escort/delivery tasks involving this NPC
-    if task_manager and task_manager.get_task_manager then
-        local tm = task_manager.get_task_manager()
-        if tm and tm.task_info then
-            for task_id, task_data in pairs(tm.task_info) do
-                -- Check if task has this NPC as target
-                if task_data.target_id and task_data.target_id == npc_id then
-                    return true
+    local ok, result = pcall(function()
+        if task_manager and task_manager.get_task_manager then
+            local tm = task_manager.get_task_manager()
+            if tm and tm.task_info then
+                for task_id, task_data in pairs(tm.task_info) do
+                    -- Check if task has this NPC as target
+                    if task_data.target_id and task_data.target_id == npc_id then
+                        return true
+                    end
+                    -- Check task type for escort-related tasks
+                    if task_data.type and (task_data.type == "escort" or task_data.type == "defend") then
+                        if task_data.npc_id and task_data.npc_id == npc_id then
+                            return true
+                        end
+                    end
                 end
-                -- Check task type for escort-related tasks
-                if task_data.type and (task_data.type == "escort" or task_data.type == "defend") then
-                    if task_data.npc_id and task_data.npc_id == npc_id then
+            end
+        end
+        return false
+    end)
+    if ok and result then return true end
+    
+    -- Check if NPC is in actor's squad (temporary companion via task)
+    local ok2, result2 = pcall(function()
+        if db.actor and get_object_squad then
+            local actor_squad = get_object_squad(db.actor)
+            if actor_squad then
+                for member in actor_squad:squad_members() do
+                    if member and member.id == npc_id then
                         return true
                     end
                 end
             end
         end
-    end
+        return false
+    end)
+    if ok2 and result2 then return true end
     
-    -- Check if NPC is in actor's squad (temporary companion via task)
-    local actor_squad = db.actor and get_object_squad(db.actor)
-    if actor_squad then
-        for member in actor_squad:squad_members() do
-            if member and member.id == npc_id then
+    -- Check for reach_task scheme (NPC following actor for quest)
+    local ok3, result3 = pcall(function()
+        if npc.get_script_params then
+            local st = npc:get_script_params()
+            if st and st.active_scheme == "reach_task" then
                 return true
             end
         end
-    end
-    
-    -- Check for reach_task scheme (NPC following actor for quest)
-    local st = npc:get_script_params and npc:get_script_params()
-    if st and st.active_scheme == "reach_task" then
-        return true
-    end
+        return false
+    end)
+    if ok3 and result3 then return true end
     
     return false
 end
@@ -373,7 +406,7 @@ local function configure_npc_anomaly_interaction(npc)
     local should_damage, reason = should_enable_anomaly_damage(npc)
     npc:set_enable_anomalies_damage(should_damage)
     
-    dbg_log("CONFIG", "NPC [%s] community [%s] damage=%s (%s)", 
+    dbg_verbose("CONFIG", "NPC [%s] community [%s] damage=%s (%s)", 
         npc:name(), npc:character_community(), tostring(should_damage), reason)
 end
 
@@ -456,6 +489,9 @@ end
 -- Track NPC positions to detect if they're stuck
 local npc_positions = {}
 local npc_stuck_count = {}
+local npc_unstuck_until = {}  -- Track when NPC can receive restrictions again
+
+local UNSTUCK_COOLDOWN = 20000  -- 20 seconds before NPC can get restrictions again after being unstuck
 
 local function get_nearby_anomalies(npc_pos, radius)
     local result = {}
@@ -523,17 +559,34 @@ local function update_npc_restrictions(npc, detection_radius)
     npc_last_update[id] = current_time
     
     local npc_pos = npc:position()
-    
-    -- Check if NPC is stuck and clear restrictions if so
-    if check_npc_stuck(npc, npc_pos) then
-        clear_npc_restrictions(npc)
-        return -- Don't add new restrictions this cycle, give NPC a chance to move
-    end
-    
     local radius = detection_radius or get_mcm_setting("base_detection_radius", 30)
     local nearby = get_nearby_anomalies(npc_pos, radius)
     
-    if #nearby == 0 then return end
+    -- No nearby anomalies - reset tracking
+    if #nearby == 0 then
+        npc_stuck_count[id] = 0
+        npc_positions[id] = nil
+        npc_unstuck_until[id] = nil
+        return
+    end
+    
+    -- NPC is near anomalies - check if still in unstuck cooldown
+    if npc_unstuck_until[id] and current_time < npc_unstuck_until[id] then
+        -- Still in cooldown, don't add restrictions
+        return
+    end
+    
+    -- Cooldown expired, clear it
+    npc_unstuck_until[id] = nil
+    
+    -- Check if NPC is stuck
+    if check_npc_stuck(npc, npc_pos) then
+        clear_npc_restrictions(npc)
+        -- Set cooldown - NPC won't get new restrictions for 20 seconds
+        npc_unstuck_until[id] = current_time + UNSTUCK_COOLDOWN
+        dbg_log("STUCK", "NPC [%s] unstuck, cooldown for 20s", npc:name())
+        return
+    end
     
     -- Get current restrictions
     local current_restrictions = npc:in_restrictions() or ""
@@ -715,7 +768,7 @@ local function get_npc_outfit_protection(npc, protection_type)
     -- Try to get outfit from slot 7 (outfit slot)
     local outfit = npc:item_in_slot(7)
     if not outfit then 
-        dbg_log("ARMOR", "NPC [%s] has no outfit", npc:name())
+        dbg_verbose("ARMOR", "NPC [%s] has no outfit", npc:name())
         return 0 
     end
     
@@ -725,7 +778,7 @@ local function get_npc_outfit_protection(npc, protection_type)
     -- Read protection value from outfit config
     local protection = SYS_GetParam(2, outfit_section, protection_type, 0)
     
-    dbg_log("ARMOR", "NPC [%s] outfit [%s] %s = %.3f", 
+    dbg_verbose("ARMOR", "NPC [%s] outfit [%s] %s = %.3f", 
         npc:name(), outfit_section, protection_type, protection)
     
     return protection or 0
@@ -747,7 +800,7 @@ function get_npc_dmg_mult(npc, anomaly)
     -- Get protection type for this anomaly
     local protection_type = get_anomaly_protection_type(anomaly_section)
     if not protection_type then
-        dbg_log("ARMOR", "Unknown anomaly type [%s], using full damage", anomaly_section)
+        dbg_verbose("ARMOR", "Unknown anomaly type [%s], using full damage", anomaly_section)
         return 1.0
     end
     
@@ -761,7 +814,7 @@ function get_npc_dmg_mult(npc, anomaly)
     -- protection > 1.0 → mult = negative (healing? cap at 0)
     local damage_mult = math.max(0, 1.0 - protection)
     
-    dbg_log("ARMOR", "Anomaly [%s] → %s → protection %.2f → damage mult %.2f",
+    dbg_verbose("ARMOR", "Anomaly [%s] → %s → protection %.2f → damage mult %.2f",
         anomaly_section, protection_type, protection, damage_mult)
     
     return damage_mult
@@ -791,7 +844,7 @@ local function cleanup_old_map_markers()
     
     if count > 0 then
         printf("[MAI] Cleaned up %d old map markers", count)
-        dbg_log("CLEANUP", "Removed %d old anomaly map markers", count)
+        dbg_verbose("CLEANUP", "Removed %d old anomaly map markers", count)
     end
     
     return count
@@ -822,14 +875,26 @@ local function is_ignore_level()
 end
 
 local function on_actor_update()
-    if not is_mod_enabled() then return end
-    if surge_started() then return end
+    if not is_mod_enabled() then 
+        dbg_verbose("UPDATE", "Mod disabled, skipping")
+        return 
+    end
+    if surge_started() then 
+        dbg_verbose("UPDATE", "Surge active, skipping")
+        return 
+    end
     
     -- Check if db.actor is valid
-    if not db.actor then return end
+    if not db.actor then 
+        dbg_verbose("UPDATE", "No db.actor, skipping")
+        return 
+    end
     
     -- Skip ignored levels (underground labs, etc.)
-    if is_ignore_level() then return end
+    if is_ignore_level() then 
+        dbg_verbose("UPDATE", "Level ignored: %s", level.name())
+        return 
+    end
     
     local current_time = time_global()
     if current_time < global_update_timer then return end
@@ -845,8 +910,13 @@ local function on_actor_update()
     local detection_radius = get_mcm_setting("base_detection_radius", 30)
     local actor_pos = db.actor:position()
     
+    -- Count NPCs for debug
+    local npc_count = 0
+    local processed_count = 0
+    
     -- Update all online stalkers
     for id, npc in pairs(db.OnlineStalkers) do
+        npc_count = npc_count + 1
         -- some mods store just the id here
         if type(npc) == "number" then
             npc = level.object_by_id(npc)
@@ -870,7 +940,15 @@ local function on_actor_update()
             if within_radius or restrictions_ignore_radius then
                 update_npc_restrictions(npc, detection_radius)
             end
+            
+            processed_count = processed_count + 1
         end
+    end
+    
+    -- Log once per update cycle if we processed NPCs
+    if processed_count > 0 then
+        dbg_verbose("UPDATE", "Processed %d/%d NPCs (cache: %d anomalies)", 
+            processed_count, npc_count, #anomaly_cache)
     end
 end
 
@@ -883,7 +961,7 @@ end
 
 local function schedule_cache_rebuild(reason)
     local delay = get_mcm_setting("cache_rebuild_delay", 2.5)
-    dbg_log("EVENT", "%s, scheduling cache rebuild in %.1fs", reason, delay)
+    dbg_verbose("EVENT", "%s, scheduling cache rebuild in %.1fs", reason, delay)
     
     -- Cancel any pending rebuild
     RemoveTimeEvent("mai_cache_rebuild", "mai_cache_rebuild")
@@ -896,7 +974,7 @@ local function schedule_cache_rebuild(reason)
     
     -- Schedule new rebuild with delay
     CreateTimeEvent("mai_cache_rebuild", "mai_cache_rebuild", delay, function()
-        dbg_log("EVENT", "Executing delayed cache rebuild")
+        dbg_verbose("EVENT", "Executing delayed cache rebuild")
         invalidate_cache()
         return true
     end)
@@ -911,24 +989,26 @@ local function on_psy_storm_end()
 end
 
 local function on_game_load()
-    dbg_log("EVENT", "Game loaded, rebuilding cache")
+    dbg_verbose("EVENT", "Game loaded, rebuilding cache")
     
     -- Enable anomaly damage for AI globally at engine level
     exec_console_cmd("ai_die_in_anomaly 1")
-    dbg_log("EVENT", "Enabled ai_die_in_anomaly 1")
+    dbg_verbose("EVENT", "Enabled ai_die_in_anomaly 1")
     
     invalidate_cache()
     npc_last_update = {} -- Clear throttle tracking
     npc_positions = {}   -- Clear position tracking
     npc_stuck_count = {} -- Clear stuck counters
+    npc_unstuck_until = {} -- Clear unstuck cooldowns
 end
 
 local function on_level_changed()
-    dbg_log("EVENT", "Level changed, invalidating cache")
+    dbg_verbose("EVENT", "Level changed, invalidating cache")
     invalidate_cache()
     npc_last_update = {}
     npc_positions = {}
     npc_stuck_count = {}
+    npc_unstuck_until = {}
 end
 
 -- Cleanup when NPC goes offline
@@ -948,6 +1028,7 @@ local function on_npc_net_destroy(npc)
     npc_last_update[id] = nil
     npc_positions[id] = nil
     npc_stuck_count[id] = nil
+    npc_unstuck_until[id] = nil
 end
 
 -- Configure NPC when it spawns online
@@ -966,7 +1047,7 @@ local function on_npc_net_spawn(npc)
     -- Configure damage settings immediately
     configure_npc_anomaly_interaction(npc)
     
-    dbg_log("SPAWN", "NPC [%s] spawned, configured anomaly interaction", npc:name())
+    dbg_verbose("SPAWN", "NPC [%s] spawned, configured anomaly interaction", npc:name())
 end
 
 --------------------------------------------------------------------------------
@@ -974,7 +1055,11 @@ end
 --------------------------------------------------------------------------------
 
 function on_game_start()
+    printf("[MAI] Initializing MAI v2.0...")
+    
     update_mcm_cache()
+    printf("[MAI] MCM cache updated - mod_enabled=%s, debug_mode=%s", 
+        tostring(cached_mod_enabled), tostring(cached_debug_mode))
     
     -- Core callbacks
     RegisterScriptCallback("actor_on_update", on_actor_update)
@@ -990,5 +1075,5 @@ function on_game_start()
     RegisterScriptCallback("actor_on_level_changed", on_level_changed)
     
     local arrival_status = is_arrival_loaded() and "detected" or "not detected"
-    printf("[MAI] v2.0 loaded - Arrival: %s", arrival_status)
+    printf("[MAI] v2.0 loaded successfully - Arrival: %s", arrival_status)
 end
