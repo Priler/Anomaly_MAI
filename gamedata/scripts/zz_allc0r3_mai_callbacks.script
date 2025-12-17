@@ -129,57 +129,17 @@ function npc_on_update(npc, st)
 end
 
 --------------------------------------------------------------------------------
--- Task Manager Hooks
+-- Task Manager Hooks (DISABLED - not needed for MAI core functionality)
 --------------------------------------------------------------------------------
 
+--[[ 
+Task hooks disabled to prevent potential conflicts with other mods.
+These callbacks are not used by MAI core functionality.
+
 AddScriptCallback("tm_give_task")
-
--- Store original function
-ogive_task = task_manager.CRandomTask.give_task
-
---- Hook for task_manager.CRandomTask.give_task
--- @param self Task manager instance
--- @param task_id Task ID
--- @param task_giver_id ID of NPC giving task (can be nil for tasks without giver)
-function task_manager.CRandomTask.give_task(self, task_id, task_giver_id)
-    ogive_task(self, task_id, task_giver_id)
-    printf("%s - give task %s -> %s", sn, tostring(task_giver_id), tostring(task_id))
-    SendScriptCallback("tm_give_task", task_giver_id, task_id)
-end
-
-AddScriptCallback("tm_complete_task")
-
--- Store original function
-otask_complete = task_manager.task_complete
-
---- Hook for task_manager.task_complete
--- @param task_id Task ID
--- @return boolean Original function result
-function task_manager.task_complete(task_id)
-    local result = otask_complete(task_id)
-    if result then
-        SendScriptCallback("tm_complete_task", task_id)
-        printf("%s - complete task %s", sn, task_id)
-    end
-    return result
-end
-
+AddScriptCallback("tm_complete_task")  
 AddScriptCallback("tm_fail_task")
-
--- Store original function
-otask_fail = task_manager.task_fail
-
---- Hook for task_manager.task_fail
--- @param task_id Task ID
--- @return boolean Original function result
-function task_manager.task_fail(task_id)
-    local result = otask_fail(task_id)
-    if result then
-        SendScriptCallback("tm_fail_task", task_id)
-        printf("%s - fail task %s", sn, task_id)
-    end
-    return result
-end
+--]]
 
 --------------------------------------------------------------------------------
 -- Save/Load

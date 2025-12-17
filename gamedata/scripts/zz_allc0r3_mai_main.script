@@ -235,98 +235,24 @@ end
 
 local function is_companion_npc(npc)
     if not npc then return false end
-    
-    -- Method 1: Standard companion info portion
-    local ok, has_info = pcall(function() return npc:has_info("npcx_is_companion") end)
-    if ok and has_info then
-        return true
-    end
-    
-    -- Method 2: Check axr_companions module directly
-    local ok2, result = pcall(function()
-        if axr_companions and axr_companions.companion_squads then
-            local npc_id = npc:id()
-            for squad_id, _ in pairs(axr_companions.companion_squads) do
-                local squad = squad_id and alife_object(squad_id)
-                if squad then
-                    for member in squad:squad_members() do
-                        if member and member.id == npc_id then
-                            return true
-                        end
-                    end
-                end
-            end
-        end
-        return false
-    end)
-    if ok2 and result then return true end
-    
-    return false
+    return npc:has_info("npcx_is_companion")
 end
 
 -- Check if NPC is an escort/task target that should be protected
+-- Simple check using story ID (quest-critical NPCs have story IDs)
 local function is_task_target_npc(npc)
     if not npc then return false end
     
+    -- Check story ID - story NPCs are quest-critical and should be protected
     local npc_id = npc:id()
-    
-    -- Check if NPC has task-related infoportions
-    -- These are given to NPCs that are quest targets (escort, rescue, etc.)
-    local has_escort_info = pcall(function() return npc:has_info("npcx_beh_escort_target") end)
-    if has_escort_info and npc:has_info("npcx_beh_escort_target") then
+    if get_object_story_id and get_object_story_id(npc_id) then
         return true
     end
     
-    -- Check task manager for active escort/delivery tasks involving this NPC
-    local ok, result = pcall(function()
-        if task_manager and task_manager.get_task_manager then
-            local tm = task_manager.get_task_manager()
-            if tm and tm.task_info then
-                for task_id, task_data in pairs(tm.task_info) do
-                    -- Check if task has this NPC as target
-                    if task_data.target_id and task_data.target_id == npc_id then
-                        return true
-                    end
-                    -- Check task type for escort-related tasks
-                    if task_data.type and (task_data.type == "escort" or task_data.type == "defend") then
-                        if task_data.npc_id and task_data.npc_id == npc_id then
-                            return true
-                        end
-                    end
-                end
-            end
-        end
-        return false
-    end)
-    if ok and result then return true end
-    
-    -- Check if NPC is in actor's squad (temporary companion via task)
-    local ok2, result2 = pcall(function()
-        if db.actor and get_object_squad then
-            local actor_squad = get_object_squad(db.actor)
-            if actor_squad then
-                for member in actor_squad:squad_members() do
-                    if member and member.id == npc_id then
-                        return true
-                    end
-                end
-            end
-        end
-        return false
-    end)
-    if ok2 and result2 then return true end
-    
-    -- Check for reach_task scheme (NPC following actor for quest)
-    local ok3, result3 = pcall(function()
-        if npc.get_script_params then
-            local st = npc:get_script_params()
-            if st and st.active_scheme == "reach_task" then
-                return true
-            end
-        end
-        return false
-    end)
-    if ok3 and result3 then return true end
+    -- Check if NPC has escort infoportion
+    if npc:has_info("npcx_beh_escort_target") then
+        return true
+    end
     
     return false
 end
