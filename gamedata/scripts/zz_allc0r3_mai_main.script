@@ -8,12 +8,14 @@
     - Damage roll based on rank + movement state
     - Effect radius system from Beef's NPCs Dies in Anomalies mod (configurable via MCM)
     - Arrival mod compatibility
+    - anomaly_on_before_activate callback for efficient NPC protection (v2.3)
     
     Design:
     - Cache anomalies once after surge, reuse until next surge
     - Single global update loop for all NPCs
     - No subscribe/unsubscribe system
-    - Damage callback decides if NPC should take damage
+    - Two-layer protection: anomaly_on_before_activate blocks protected NPCs,
+      damage callback handles rank-based rolls for normal NPCs
 --]]
 
 
@@ -670,6 +672,40 @@ function should_npc_take_damage(npc, anomaly)
 end
 
 --------------------------------------------------------------------------------
+-- Anomaly Before Activate Callback (First Line of Defense)
+--------------------------------------------------------------------------------
+
+-- This callback is called by the engine BEFORE an anomaly tries to affect an object
+-- Returning false in flags.ret_value makes the anomaly completely ignore the object
+-- This is more efficient than blocking damage in npc_on_before_hit because it
+-- prevents the anomaly from even attempting to process the object
+local function on_anomaly_before_activate(zone, obj, flags)
+    -- Only process if mod is enabled
+    if not is_mod_enabled() then return end
+    
+    -- Only process stalkers (vanilla already handles dead NPCs)
+    if not obj then return end
+    if not IsStalker(obj) then return end
+    if not obj:alive() then return end
+    
+    -- Skip during surge (anomalies behave differently)
+    if surge_started() then return end
+    
+    -- Check if this NPC should be protected from anomaly damage
+    local should_damage, reason = should_enable_anomaly_damage(obj)
+    
+    if not should_damage then
+        -- Block the anomaly from affecting this NPC entirely
+        flags.ret_value = false
+        dbg_verbose("BLOCK", "Anomaly [%s] blocked from affecting [%s] (%s)", 
+            zone:name(), obj:name(), reason)
+    end
+    
+    -- Note: NPCs that CAN take damage will still go through should_npc_take_damage()
+    -- via the npc_on_before_hit callback for the actual damage roll
+end
+
+--------------------------------------------------------------------------------
 -- Armor Protection System
 --------------------------------------------------------------------------------
 
@@ -1091,6 +1127,9 @@ function on_game_start()
     RegisterScriptCallback("on_option_change", on_option_change)
     RegisterScriptCallback("npc_on_net_destroy", on_npc_net_destroy)
     RegisterScriptCallback("npc_on_net_spawn", on_npc_net_spawn)
+    
+    -- Anomaly protection callback (first line of defense - blocks anomaly activation)
+    RegisterScriptCallback("anomaly_on_before_activate", on_anomaly_before_activate)
     
     -- Cache invalidation callbacks
     RegisterScriptCallback("surge_manager_end_surge", on_surge_end)
