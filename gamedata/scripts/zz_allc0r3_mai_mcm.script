@@ -12,28 +12,30 @@ local defaults = {
     -- General settings
     mod_enabled = true,
     debug_mode = false,
-    cleanup_map_markers = false,         -- One-time cleanup of old map markers
+    verbose_debug = false,
+    show_debug_anomalies = false,          -- Show anomalies on map for debugging
+    cleanup_map_markers = false,           -- One-time cleanup of old map markers
     
     -- Detection settings
-    base_detection_radius = 30,           -- How far NPCs can detect anomalies
-    max_restrictions_length = 2048,       -- Max restriction string length
-    cache_rebuild_delay = 2.5,            -- Seconds to wait after surge before rebuilding cache (Arrival compat)
+    base_detection_radius = 30,            -- How far NPCs can detect anomalies
+    max_restrictions_length = 2048,        -- Max restriction string length
+    cache_rebuild_delay = 2.5,             -- Seconds to wait after surge before rebuilding cache (Arrival compat)
     
     -- Effect radius settings
     effect_radius = 300,                   -- NPCs outside this radius are protected from damage
     restrictions_ignore_radius = true,     -- Apply pathfinding restrictions regardless of effect radius
     
     -- Damage settings
-    enable_armor_damage_mult = true,      -- Use outfit-based damage multipliers
-    immune_zero_miss_chance = true,       -- NPCs with 0% miss chance are immune
+    enable_armor_damage_mult = true,       -- Use outfit-based damage multipliers
+    immune_zero_miss_chance = true,        -- NPCs with 0% miss chance are immune
     
     -- Movement state multipliers
     -- Applied to base miss chance
     -- Lower = less likely to miss, Higher = more likely to miss
-    standing_miss_multiplier = 0.3,       -- Standing still - very careful
-    walking_miss_multiplier = 0.6,        -- Walking - observing surroundings
-    running_miss_multiplier = 1.2,        -- Running - might miss some
-    combat_miss_multiplier = 3.0,         -- In combat - distracted
+    standing_miss_multiplier = 0.3,        -- Standing still - very careful
+    walking_miss_multiplier = 0.6,         -- Walking - observing surroundings
+    running_miss_multiplier = 1.2,         -- Running - might miss some
+    combat_miss_multiplier = 3.0,          -- In combat - distracted
     
     -- Rank-based miss chance (percentage)
     -- Higher = more likely to walk into anomalies / take damage
@@ -99,6 +101,20 @@ function on_mcm_load()
                 val = 1,
                 def = false,
                 hint = "mai_debug_mode",
+            },
+            {
+                id = "verbose_debug",
+                type = "check",
+                val = 1,
+                def = false,
+                hint = "mai_verbose_debug",
+            },
+            {
+                id = "show_debug_anomalies",
+                type = "check",
+                val = 1,
+                def = false,
+                hint = "mai_show_debug_anomalies",
             },
             {
                 id = "cleanup_map_markers",

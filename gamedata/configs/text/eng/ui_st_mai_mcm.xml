@@ -3,8 +3,8 @@
     <!-- MAI MCM Strings - Version 3.0 -->
     
     <!-- Title -->
-    <string id="ui_mcm_menu_mai">
-        <text>MAI - Mutant/Anomaly Interaction</text>
+    <string id="ui_mcm_mai_title">
+        <text>MAI - Mutant/Anomaly Interaction v3.0</text>
     </string>
     
     <!-- Section Titles -->
@@ -25,7 +25,7 @@
     </string>
     
     <string id="ui_mcm_mai_rank_title">
-        <text>Rank Miss Chance (%)</text>
+        <text>Rank Miss Chance (%%)</text>
     </string>
     
     <!-- General Settings -->
@@ -40,7 +40,21 @@
         <text>Debug Mode</text>
     </string>
     <string id="ui_mcm_mai_debug_mode_desc">
-        <text>Enable debug logging to console. Shows detection, damage, and cache events.</text>
+        <text>Enable debug logging to console. Shows detection, damage, and death events.</text>
+    </string>
+    
+    <string id="ui_mcm_mai_verbose_debug">
+        <text>Verbose Debug</text>
+    </string>
+    <string id="ui_mcm_mai_verbose_debug_desc">
+        <text>Enable verbose debug logging. Shows update loop, cache rebuilds, and config details. Very spammy!</text>
+    </string>
+    
+    <string id="ui_mcm_mai_show_debug_anomalies">
+        <text>Show Anomalies on Map</text>
+    </string>
+    <string id="ui_mcm_mai_show_debug_anomalies_desc">
+        <text>Show all detected anomalies on the PDA map as markers. Useful for debugging why NPCs get stuck. Toggle off to remove markers.</text>
     </string>
     
     <string id="ui_mcm_mai_cleanup_map_markers">
@@ -91,14 +105,14 @@
         <text>Outfit-based Damage</text>
     </string>
     <string id="ui_mcm_mai_enable_armor_damage_mult_desc">
-        <text>Apply damage multipliers based on NPC's equipped outfit. Protection values are read directly from outfit configs (burn, shock, chemical, radiation, psy, strike). An exoskeleton with 0.7 shock protection takes only 30% electric anomaly damage.</text>
+        <text>Apply damage multipliers based on NPC's equipped outfit. Protection values are read directly from outfit configs (burn, shock, chemical, radiation, psy, strike). An exoskeleton with 0.7 shock protection takes only 30%% electric anomaly damage.</text>
     </string>
     
     <string id="ui_mcm_mai_immune_zero_miss_chance">
-        <text>Immune at 0% Miss Chance</text>
+        <text>Immune at 0%% Miss Chance</text>
     </string>
     <string id="ui_mcm_mai_immune_zero_miss_chance_desc">
-        <text>NPCs with 0% miss chance (Veterans+) become completely immune to anomaly damage. Safety net for experienced stalkers. Default: Enabled</text>
+        <text>NPCs with 0%% miss chance (Veterans+) become completely immune to anomaly damage. Safety net for experienced stalkers. Default: Enabled</text>
     </string>
     
     <!-- Movement State Settings -->
@@ -135,56 +149,56 @@
         <text>Novice</text>
     </string>
     <string id="ui_mcm_mai_rank_novice_miss_chance_desc">
-        <text>Base miss chance for Novice stalkers. 100% = always might walk into anomalies. Default: 100%</text>
+        <text>Base miss chance for Novice stalkers. 100%% = always might walk into anomalies. Default: 100%%</text>
     </string>
     
     <string id="ui_mcm_mai_rank_trainee_miss_chance">
         <text>Trainee</text>
     </string>
     <string id="ui_mcm_mai_rank_trainee_miss_chance_desc">
-        <text>Base miss chance for Trainee stalkers. Default: 75%</text>
+        <text>Base miss chance for Trainee stalkers. Default: 75%%</text>
     </string>
     
     <string id="ui_mcm_mai_rank_experienced_miss_chance">
         <text>Experienced</text>
     </string>
     <string id="ui_mcm_mai_rank_experienced_miss_chance_desc">
-        <text>Base miss chance for Experienced stalkers. Default: 50%</text>
+        <text>Base miss chance for Experienced stalkers. Default: 50%%</text>
     </string>
     
     <string id="ui_mcm_mai_rank_professional_miss_chance">
         <text>Professional</text>
     </string>
     <string id="ui_mcm_mai_rank_professional_miss_chance_desc">
-        <text>Base miss chance for Professional stalkers. Default: 25%</text>
+        <text>Base miss chance for Professional stalkers. Default: 25%%</text>
     </string>
     
     <string id="ui_mcm_mai_rank_veteran_miss_chance">
         <text>Veteran</text>
     </string>
     <string id="ui_mcm_mai_rank_veteran_miss_chance_desc">
-        <text>Base miss chance for Veteran stalkers. 0% = never walks into anomalies. Default: 0%</text>
+        <text>Base miss chance for Veteran stalkers. 0%% = never walks into anomalies. Default: 0%%</text>
     </string>
     
     <string id="ui_mcm_mai_rank_expert_miss_chance">
         <text>Expert</text>
     </string>
     <string id="ui_mcm_mai_rank_expert_miss_chance_desc">
-        <text>Base miss chance for Expert stalkers. Default: 0%</text>
+        <text>Base miss chance for Expert stalkers. Default: 0%%</text>
     </string>
     
     <string id="ui_mcm_mai_rank_master_miss_chance">
         <text>Master</text>
     </string>
     <string id="ui_mcm_mai_rank_master_miss_chance_desc">
-        <text>Base miss chance for Master stalkers. Default: 0%</text>
+        <text>Base miss chance for Master stalkers. Default: 0%%</text>
     </string>
     
     <string id="ui_mcm_mai_rank_legend_miss_chance">
         <text>Legend</text>
     </string>
     <string id="ui_mcm_mai_rank_legend_miss_chance_desc">
-        <text>Base miss chance for Legend stalkers. Default: 0%</text>
+        <text>Base miss chance for Legend stalkers. Default: 0%%</text>
     </string>
     
 </string_table>
