@@ -1,0 +1,237 @@
+<?xml version="1.0" encoding="windows-1251"?>
+<string_table>
+    <!-- MAI MCM Strings - Version 3.0 -->
+    
+    <!-- Title -->
+    <string id="ui_mcm_mai_title">
+        <text>MAI - Взаимодействие мутантов и аномалий, версия 2.4</text>
+    </string>
+    
+    <!-- Section Titles -->
+    <string id="ui_mcm_mai_general_title">
+        <text>Общие настройки</text>
+    </string>
+    
+    <string id="ui_mcm_mai_detection_title">
+        <text>Настройки обнаружения</text>
+    </string>
+    
+    <string id="ui_mcm_mai_damage_title">
+        <text>Настройки урона</text>
+    </string>
+    
+    <string id="ui_mcm_mai_movement_title">
+        <text>Множители состояний движения</text>
+    </string>
+    
+    <string id="ui_mcm_mai_rank_title">
+        <text>Рейтинг «Неудачный шанс» (%%)</text>
+    </string>
+    
+    <!-- General Settings -->
+    <string id="ui_mcm_mai_mod_enabled">
+        <text>Включить MAI</text>
+    </string>
+    <string id="ui_mcm_mai_mod_enabled_desc">
+        <text>Включите или полностью отключить мод MAI. При отключении NPC будут полностью игнорировать аномалии.</text>
+    </string>
+    
+    <string id="ui_mcm_mai_debug_mode">
+        <text>Режим отладки</text>
+    </string>
+    <string id="ui_mcm_mai_debug_mode_desc">
+        <text>Включить вывод отладочной информации в консоль. Отображает события обнаружения, нанесения урона и смерти.</text>
+    </string>
+    
+    <string id="ui_mcm_mai_verbose_debug">
+        <text>Подробный отладочный режим</text>
+    </string>
+    <string id="ui_mcm_mai_verbose_debug_desc">
+        <text>Включить подробное отладочное логирование. Отображает цикл обновления, перестроение кэша и сведения о конфигурации. Очень навязчиво!</text>
+    </string>
+    
+    <string id="ui_mcm_mai_show_debug_anomalies">
+        <text>Показать аномалии на карте</text>
+    </string>
+    <string id="ui_mcm_mai_show_debug_anomalies_desc">
+        <text>Отображает все обнаруженные аномалии на карте КПК в виде маркеров. Полезно для отладки причин зависания NPC. Отключите эту функцию, чтобы удалить маркеры.</text>
+    </string>
+    
+    <string id="ui_mcm_mai_cleanup_map_markers">
+        <text>Удаляет старые маркеры с карты.</text>
+    </string>
+    <string id="ui_mcm_mai_cleanup_map_markers_desc">
+        <text>Удалить маркеры аномалий, оставшиеся на карте КПК от предыдущих версий MAI. Включите эту функцию, примените настройки, а затем снова отключите. Это одноразовая операция очистки.</text>
+    </string>
+    
+    <!-- Detection Settings -->
+    <string id="ui_mcm_mai_base_detection_radius">
+        <text>Радиус обнаружения</text>
+    </string>
+    <string id="ui_mcm_mai_base_detection_radius_desc">
+        <text>Дальность обнаружения аномалий NPC (в метрах). Чем выше значение, тем раньше обнаружение, но тем больше ограничений. По умолчанию: 30 м.</text>
+    </string>
+    
+    <string id="ui_mcm_mai_max_restrictions_length">
+        <text>Максимальный буфер ограничений</text>
+    </string>
+    <string id="ui_mcm_mai_max_restrictions_length_desc">
+        <text>Максимальная длина строки ограничений для каждого NPC. При превышении этой длины новые аномалии добавляться не будут. По умолчанию: 2048</text>
+    </string>
+    
+    <string id="ui_mcm_mai_cache_rebuild_delay">
+        <text>Задержка перестроения кэша</text>
+    </string>
+    <string id="ui_mcm_mai_cache_rebuild_delay_desc">
+        <text>Время ожидания в секундах после всплеска/психической бури перед восстановлением кэша аномалий. Позволяет моду Arrival завершить перезапуск аномалий. Установите значение 0, если не используется Arrival. По умолчанию: 2,5 с.</text>
+    </string>
+    
+    <string id="ui_mcm_mai_effect_radius">
+        <text>Радиус эффекта</text>
+    </string>
+    <string id="ui_mcm_mai_effect_radius_desc">
+        <text>NPC, находящиеся за пределами этого радиуса от игрока, защищены от урона от аномалий. Это повышает производительность и предотвращает гибель NPC, находящихся на расстоянии. По умолчанию: 300 м.</text>
+    </string>
+    
+    <string id="ui_mcm_mai_restrictions_ignore_radius">
+        <text>Глобальный поиск пути</text>
+    </string>
+    <string id="ui_mcm_mai_restrictions_ignore_radius_desc">
+        <text>Если эта функция включена, NPC будут стараться избегать аномалий независимо от расстояния до игрока. Если она отключена, ограничения на поиск пути будут применяться только к NPC, находящимся в радиусе действия. По умолчанию: включено.</text>
+    </string>
+    
+    <!-- Damage Settings -->
+    <string id="ui_mcm_mai_enable_armor_damage_mult">
+        <text>Урон, зависящий от экипировки</text>
+    </string>
+    <string id="ui_mcm_mai_enable_armor_damage_mult_desc">
+        <text>Применяйт множитель урона в зависимости от экипировки NPC. Значения защиты считываются непосредственно из настроек экипировки (ожог, электричество, химическое воздействие, радиация, психическое воздействие, удар). Экзоскелет с защитой от электричества 0,7 получает только 30% урона от электрических аномалий.</text>
+    </string>
+    
+    <string id="ui_mcm_mai_immune_zero_miss_chance">
+        <text>Иммунитет 0% Шанс промаха</text>
+    </string>
+    <string id="ui_mcm_mai_immune_zero_miss_chance_desc">
+        <text>NPC с 0% вероятностью промаха (ветераны и выше) становятся полностью невосприимчивы к урону от аномалий. Страховка для опытных сталкеров. По умолчанию: включено.</text>
+    </string>
+    
+    <!-- Movement State Settings -->
+    <string id="ui_mcm_mai_standing_miss_multiplier">
+        <text>Постоянный множитель</text>
+    </string>
+    <string id="ui_mcm_mai_standing_miss_multiplier_desc">
+        <text>Множитель вероятности промаха, когда NPC стоит неподвижно. Чем ниже значение, тем осторожнее. Значение по умолчанию: 0,3x.</text>
+    </string>
+    
+    <string id="ui_mcm_mai_walking_miss_multiplier">
+        <text>Пешеходный множитель</text>
+    </string>
+    <string id="ui_mcm_mai_walking_miss_multiplier_desc">
+        <text>Множитель вероятности промаха при движении NPC. По умолчанию: 0,6x</text>
+    </string>
+    
+    <string id="ui_mcm_mai_running_miss_multiplier">
+        <text>Текущий множитель</text>
+    </string>
+    <string id="ui_mcm_mai_running_miss_multiplier_desc">
+        <text>Множитель вероятности промаха, когда NPC бежит. Чем выше значение, тем выше вероятность пропустить аномалии. Значение по умолчанию: 1,2x.</text>
+    </string>
+    
+    <string id="ui_mcm_mai_combat_miss_multiplier">
+        <text>Боевой множитель</text>
+    </string>
+    <string id="ui_mcm_mai_combat_miss_multiplier_desc">
+        <text>Множитель вероятности промаха, когда NPC находится в бою. Отвлеченные NPC с гораздо большей вероятностью столкнутся с аномалиями. По умолчанию: 3.0x</text>
+    </string>
+    
+    <!-- Rank Settings -->
+    <string id="ui_mcm_mai_rank_novice_miss_chance">
+        <text>Новичок</text>
+    </string>
+    <string id="ui_mcm_mai_rank_novice_miss_chance_desc">
+        <text>Базовая вероятность промаха для начинающих сталкеров. 100% = всегда есть вероятность попасть в аномалию. Значение по умолчанию: 100%.</text>
+    </string>
+    
+    <string id="ui_mcm_mai_rank_trainee_miss_chance">
+        <text>Стажер</text>
+    </string>
+    <string id="ui_mcm_mai_rank_trainee_miss_chance_desc">
+        <text>Базовая вероятность промаха для стажеров-сталкеров. По умолчанию: 75%</text>
+    </string>
+    
+    <string id="ui_mcm_mai_rank_experienced_miss_chance">
+        <text>Опытный</text>
+    </string>
+    <string id="ui_mcm_mai_rank_experienced_miss_chance_desc">
+        <text>Базовая вероятность промаха для опытных сталкеров. По умолчанию: 50%.</text>
+    </string>
+    
+    <string id="ui_mcm_mai_rank_professional_miss_chance">
+        <text>Профессиональный</text>
+    </string>
+    <string id="ui_mcm_mai_rank_professional_miss_chance_desc">
+        <text>Базовая вероятность промаха для профессиональных сталкеров. По умолчанию: 25%.</text>
+    </string>
+    
+    <string id="ui_mcm_mai_rank_veteran_miss_chance">
+        <text>Ветеран</text>
+    </string>
+    <string id="ui_mcm_mai_rank_veteran_miss_chance_desc">
+        <text>Базовая вероятность промаха для опытных сталкеров. 0% = никогда не попадает в аномалии. По умолчанию: 0%</text>
+    </string>
+    
+    <string id="ui_mcm_mai_rank_expert_miss_chance">
+        <text>Эксперт</text>
+    </string>
+    <string id="ui_mcm_mai_rank_expert_miss_chance_desc">
+        <text>Базовая вероятность промаха для опытных сталкеров. По умолчанию: 0%%</text>
+    </string>
+    
+    <string id="ui_mcm_mai_rank_master_miss_chance">
+        <text>Владелец</text>
+    </string>
+    <string id="ui_mcm_mai_rank_master_miss_chance_desc">
+        <text>Базовая вероятность промаха для мастеров-сталкеров. По умолчанию: 0%%</text>
+    </string>
+    
+    <string id="ui_mcm_mai_rank_legend_miss_chance">
+        <text>Легенда</text>
+    </string>
+    <string id="ui_mcm_mai_rank_legend_miss_chance_desc">
+        <text>Базовая вероятность промаха для легендарных сталкеров. По умолчанию: 0%%</text>
+    </string>
+    
+    <!-- Experimental Settings -->
+    <string id="ui_mcm_mai_experimental_title">
+        <text>Экспериментальные функции</text>
+    </string>
+    
+    <string id="ui_mcm_mai_active_flee_enabled">
+        <text>Активное бегство</text>
+    </string>
+    <string id="ui_mcm_mai_active_flee_enabled_desc">
+        <text>Когда NPC застревает рядом с аномалиями, он будет активно убегать в безопасное место, а не просто снимать ограничения. Использует поиск укрытия от ближайшей аномалии. По умолчанию: включено.</text>
+    </string>
+    
+    <string id="ui_mcm_mai_active_flee_min_distance">
+        <text>Мин. дистанция бегства</text>
+    </string>
+    <string id="ui_mcm_mai_active_flee_min_distance_desc">
+        <text>Минимальное расстояние (в метрах) для бегства от аномалии. NPC попытается отойти хотя бы на это расстояние. По умолчанию: 15 м.</text>
+    </string>
+    
+    <string id="ui_mcm_mai_active_flee_max_distance">
+        <text>Макс. дистанция бегства</text>
+    </string>
+    <string id="ui_mcm_mai_active_flee_max_distance_desc">
+        <text>Максимальное расстояние поиска безопасной позиции. Если позиция не найдена в этом радиусе, ограничения просто снимаются. По умолчанию: 40 м.</text>
+    </string>
+    
+    <string id="ui_mcm_mai_active_flee_cooldown">
+        <text>Перезарядка бегства</text>
+    </string>
+    <string id="ui_mcm_mai_active_flee_cooldown_desc">
+        <text>Секунды до получения новых ограничений аномалий после бегства. Большие значения дают NPC больше времени отойти. По умолчанию: 30 сек.</text>
+    </string>
+    
+</string_table>

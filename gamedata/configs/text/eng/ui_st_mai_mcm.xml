@@ -106,10 +106,10 @@
     </string>
     
     <string id="ui_mcm_mai_active_flee_enabled">
-        <text>Active Flee (Experimental)</text>
+        <text>Active Flee</text>
     </string>
     <string id="ui_mcm_mai_active_flee_enabled_desc">
-        <text>When NPC gets stuck near anomalies, actively make them run to a safe position instead of just clearing restrictions. Uses pathfinding to find cover away from the closest anomaly. May cause unusual NPC movement in some cases. Default: Disabled</text>
+        <text>When NPC gets stuck near anomalies, actively make them run to a safe position instead of just clearing restrictions. Uses pathfinding to find cover away from the closest anomaly. Default: Enabled</text>
     </string>
     
     <string id="ui_mcm_mai_active_flee_min_distance">
