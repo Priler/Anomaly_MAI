@@ -470,7 +470,7 @@ local npc_positions = {}
 local npc_stuck_count = {}
 local npc_unstuck_until = {}  -- Track when NPC can receive restrictions again
 
-local UNSTUCK_COOLDOWN = 20000  -- 20 seconds before NPC can get restrictions again after being unstuck
+-- Get unstuck cooldown from MCM (default 30 seconds)
 
 
 -- ### Active Flee System (Experimental)
@@ -588,6 +588,7 @@ local function get_nearby_anomalies(npc_pos, radius)
 end
 
 -- Check if NPC is stuck (hasn't moved significantly)
+-- Returns: is_stuck, is_urgent (close to anomaly)
 local function check_npc_stuck(npc, current_pos)
     local id = npc:id()
     local last_pos = npc_positions[id]
@@ -595,7 +596,7 @@ local function check_npc_stuck(npc, current_pos)
     if not last_pos then
         npc_positions[id] = current_pos
         npc_stuck_count[id] = 0
-        return false
+        return false, false
     end
     
     local distance_moved = last_pos:distance_to(current_pos)
@@ -608,8 +609,15 @@ local function check_npc_stuck(npc, current_pos)
         npc_stuck_count[id] = 0
     end
     
-    -- Consider stuck after 5 consecutive checks with no movement (10 seconds)
-    return npc_stuck_count[id] >= 5
+    -- Check if NPC is very close to an anomaly (urgent situation)
+    local closest_anom, closest_dist = find_closest_anomaly(current_pos)
+    local is_close_to_anomaly = closest_anom and closest_dist < 8  -- within 8 meters
+    
+    -- Faster stuck detection if close to anomaly (3 checks = ~6 seconds)
+    -- Normal stuck detection if far from anomaly (5 checks = ~10 seconds)
+    local stuck_threshold = is_close_to_anomaly and 3 or 5
+    
+    return npc_stuck_count[id] >= stuck_threshold, is_close_to_anomaly
 end
 
 -- Clear restrictions for NPC
@@ -662,17 +670,24 @@ local function update_npc_restrictions(npc, detection_radius)
     -- Cooldown expired, clear it
     npc_unstuck_until[id] = nil
     
-    -- Check if NPC is stuck
-    if check_npc_stuck(npc, npc_pos) then
+    -- Check if NPC is stuck (faster detection if close to anomaly)
+    local is_stuck, is_urgent = check_npc_stuck(npc, npc_pos)
+    
+    if is_stuck then
         -- Check if active flee is enabled
-        local active_flee_enabled = get_mcm_setting("active_flee_enabled", false)
+        local active_flee_enabled = get_mcm_setting("active_flee_enabled", true)
         
         if active_flee_enabled then
             -- Find closest anomaly and flee from it
             local closest_anom, closest_dist = find_closest_anomaly(npc_pos)
             if closest_anom then
-                dbg_log("STUCK", "NPC [%s] stuck near [%s] (%.1fm), attempting active flee", 
-                    npc:name(), closest_anom.name, closest_dist)
+                if is_urgent then
+                    dbg_log("STUCK", "NPC [%s] URGENT stuck very close to [%s] (%.1fm), fleeing immediately", 
+                        npc:name(), closest_anom.name, closest_dist)
+                else
+                    dbg_log("STUCK", "NPC [%s] stuck near [%s] (%.1fm), attempting active flee", 
+                        npc:name(), closest_anom.name, closest_dist)
+                end
                 
                 -- Clear restrictions first so NPC can move freely
                 clear_npc_restrictions(npc)
@@ -683,6 +698,14 @@ local function update_npc_restrictions(npc, detection_radius)
                 else
                     dbg_log("STUCK", "NPC [%s] active flee failed, using fallback", npc:name())
                 end
+                
+                -- Re-add restriction for the anomaly we fled from
+                -- This prevents NPC from walking right back into it
+                pcall(function()
+                    npc:add_restrictions("", closest_anom.name)
+                end)
+                dbg_log("STUCK", "NPC [%s] keeping restriction for [%s] to prevent return", 
+                    npc:name(), closest_anom.name)
             else
                 -- No anomaly found, just clear restrictions
                 clear_npc_restrictions(npc)
@@ -693,8 +716,9 @@ local function update_npc_restrictions(npc, detection_radius)
             dbg_log("STUCK", "NPC [%s] unstuck (restrictions cleared)", npc:name())
         end
         
-        -- Set cooldown - NPC won't get new restrictions for 20 seconds
-        npc_unstuck_until[id] = current_time + UNSTUCK_COOLDOWN
+        -- Set cooldown - NPC won't get new restrictions for configured time
+        local cooldown_seconds = get_mcm_setting("active_flee_cooldown", 30)
+        npc_unstuck_until[id] = current_time + (cooldown_seconds * 1000)
         return
     end
     

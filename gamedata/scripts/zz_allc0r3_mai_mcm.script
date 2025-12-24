@@ -25,9 +25,10 @@ local defaults = {
     restrictions_ignore_radius = true,     -- Apply pathfinding restrictions regardless of effect radius
     
     -- Experimental: Active flee system
-    active_flee_enabled = false,           -- When stuck, actively flee from anomalies instead of just clearing restrictions
+    active_flee_enabled = true,            -- When stuck, actively flee from anomalies instead of just clearing restrictions
     active_flee_min_distance = 15,         -- Minimum distance to flee from anomaly
     active_flee_max_distance = 40,         -- Maximum search distance for safe position
+    active_flee_cooldown = 30,             -- Seconds before NPC can get restrictions again after fleeing
     
     -- Damage settings
     enable_armor_damage_mult = true,       -- Use outfit-based damage multipliers
@@ -190,7 +191,7 @@ function on_mcm_load()
                 id = "active_flee_enabled",
                 type = "check",
                 val = 1,
-                def = false,
+                def = true,
                 hint = "mai_active_flee_enabled",
             },
             {
@@ -212,6 +213,16 @@ function on_mcm_load()
                 step = 10,
                 def = 40,
                 hint = "mai_active_flee_max_distance",
+            },
+            {
+                id = "active_flee_cooldown",
+                type = "track",
+                val = 2,
+                min = 10,
+                max = 120,
+                step = 5,
+                def = 30,
+                hint = "mai_active_flee_cooldown",
             },
             
             -- Damage Settings

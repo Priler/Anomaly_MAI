@@ -126,6 +126,13 @@
         <text>Maximum distance to search for a safe position. If no position found within this range, NPC will just have restrictions cleared. Default: 40m</text>
     </string>
     
+    <string id="ui_mcm_mai_active_flee_cooldown">
+        <text>Flee Cooldown</text>
+    </string>
+    <string id="ui_mcm_mai_active_flee_cooldown_desc">
+        <text>Seconds before NPC can receive new anomaly restrictions after fleeing. Higher values give NPCs more time to move away. Default: 30s</text>
+    </string>
+    
     <!-- Damage Settings -->
     <string id="ui_mcm_mai_enable_armor_damage_mult">
         <text>Outfit-based Damage</text>
