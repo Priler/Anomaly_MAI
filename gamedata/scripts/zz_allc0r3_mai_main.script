@@ -841,9 +841,29 @@ local function on_anomaly_before_activate(zone, obj, flags)
     -- IMPORTANT: Skip the player! We only want to affect NPCs
     if obj:id() == 0 then return end  -- Actor always has id 0
     
-    -- Only process stalkers (vanilla already handles dead NPCs)
+    -- Only process stalkers
     if not IsStalker(obj) then return end
-    if not obj:alive() then return end
+    
+    -- Block anomalies from affecting dead NPCs (optional)
+    if get_mcm_setting("block_anomalies_on_corpses", true) then
+        -- Check multiple death indicators for reliability
+        local is_dead = not obj:alive()
+        
+        -- Additional check: health <= 0
+        if not is_dead and obj.health then
+            is_dead = obj:health() <= 0
+        end
+        
+        if is_dead then
+            flags.ret_value = false
+            dbg_verbose("BLOCK", "Anomaly [%s] blocked from affecting dead NPC [%s]", 
+                zone:name(), obj:name())
+            return
+        end
+    else
+        -- Original behavior: just skip dead NPCs without blocking
+        if not obj:alive() then return end
+    end
     
     -- Skip during surge (anomalies behave differently)
     if surge_started() then return end

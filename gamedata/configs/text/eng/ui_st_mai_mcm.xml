@@ -148,6 +148,13 @@
         <text>NPCs with 0%% miss chance (Veterans+) become completely immune to anomaly damage. Safety net for experienced stalkers. Default: Enabled</text>
     </string>
     
+    <string id="ui_mcm_mai_block_anomalies_on_corpses">
+        <text>Block Anomalies on Corpses</text>
+    </string>
+    <string id="ui_mcm_mai_block_anomalies_on_corpses_desc">
+        <text>Prevent anomalies from activating on dead NPC bodies. Stops ragdoll physics glitches and improves performance. Default: Enabled</text>
+    </string>
+    
     <!-- Movement State Settings -->
     <string id="ui_mcm_mai_standing_miss_multiplier">
         <text>Standing Multiplier</text>

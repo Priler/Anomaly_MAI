@@ -115,6 +115,13 @@
         <text>NPC с 0% вероятностью промаха (ветераны и выше) становятся полностью невосприимчивы к урону от аномалий. Страховка для опытных сталкеров. По умолчанию: включено.</text>
     </string>
     
+    <string id="ui_mcm_mai_block_anomalies_on_corpses">
+        <text>Блокировать аномалии на трупах</text>
+    </string>
+    <string id="ui_mcm_mai_block_anomalies_on_corpses_desc">
+        <text>Запретить аномалиям воздействовать на тела мёртвых NPC. Устраняет глюки физики рэгдолла и улучшает производительность. По умолчанию: включено.</text>
+    </string>
+    
     <!-- Movement State Settings -->
     <string id="ui_mcm_mai_standing_miss_multiplier">
         <text>Постоянный множитель</text>

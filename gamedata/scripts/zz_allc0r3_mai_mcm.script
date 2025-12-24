@@ -33,6 +33,7 @@ local defaults = {
     -- Damage settings
     enable_armor_damage_mult = true,       -- Use outfit-based damage multipliers
     immune_zero_miss_chance = true,        -- NPCs with 0% miss chance are immune
+    block_anomalies_on_corpses = true,     -- Block anomalies from affecting dead NPCs
     
     -- Movement state multipliers
     -- Applied to base miss chance
@@ -244,6 +245,13 @@ function on_mcm_load()
                 val = 1,
                 def = true,
                 hint = "mai_immune_zero_miss_chance",
+            },
+            {
+                id = "block_anomalies_on_corpses",
+                type = "check",
+                val = 1,
+                def = true,
+                hint = "mai_block_anomalies_on_corpses",
             },
             
             -- Movement State Settings
