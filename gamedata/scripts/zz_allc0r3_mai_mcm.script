@@ -1,12 +1,4 @@
---[[
-    MAI MCM Options - Mod Configuration Menu integration
-
-    Configuration for the lightweight MAI system.
---]]
-
---------------------------------------------------------------------------------
--- Default Settings
---------------------------------------------------------------------------------
+-- ### Default Settings
 
 local defaults = {
     -- General settings
@@ -49,9 +41,8 @@ local defaults = {
     rank_legend_miss_chance = 0,
 }
 
---------------------------------------------------------------------------------
--- MCM Helper Functions
---------------------------------------------------------------------------------
+
+-- ### MCM Helper Functions
 
 function get_config(key)
     if ui_mcm then
@@ -64,9 +55,8 @@ function mcm_available()
     return ui_mcm ~= nil
 end
 
---------------------------------------------------------------------------------
--- MCM Menu Definition
---------------------------------------------------------------------------------
+
+-- ### MCM Menu Definition
 
 function on_mcm_load()
     return {
@@ -336,9 +326,8 @@ function on_mcm_load()
     }
 end
 
---------------------------------------------------------------------------------
--- Initialization
---------------------------------------------------------------------------------
+
+-- ### Initialization
 
 function on_game_start()
     if ui_mcm then

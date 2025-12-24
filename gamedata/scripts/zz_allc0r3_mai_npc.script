@@ -1,15 +1,12 @@
 --[[
-    MAI NPC Script - Damage handling
-    
     This script handles:
     - NPC damage from anomalies (decides if damage should apply)
     - Damage multiplier based on armor
     - Death logging with news notifications
 --]]
 
---------------------------------------------------------------------------------
--- Local Helper Functions (safety net checks)
---------------------------------------------------------------------------------
+
+-- ### Local Helper Functions (safety net checks)
 
 -- Direct companion check - simple and reliable like Beef's mod
 local function is_companion(npc)
@@ -34,9 +31,8 @@ local function is_important_npc(npc)
     return false
 end
 
---------------------------------------------------------------------------------
--- Damage Handler
---------------------------------------------------------------------------------
+
+-- ### Damage Handler
 
 function mai_on_npc_before_hit(npc, shit, bone_id, flags)
     if not npc then return end
@@ -69,9 +65,8 @@ function mai_on_npc_before_hit(npc, shit, bone_id, flags)
     shit.power = shit.power * zz_allc0r3_mai_main.get_npc_dmg_mult(npc, anomaly)
 end
 
---------------------------------------------------------------------------------
--- Death Logging
---------------------------------------------------------------------------------
+
+-- ### Death Logging
 
 function mai_on_npc_death(victim, killer)
     if not victim then return end
@@ -138,9 +133,8 @@ function mai_on_npc_death(victim, killer)
     end
 end
 
---------------------------------------------------------------------------------
--- Initialization
---------------------------------------------------------------------------------
+
+-- ### Initialization
 
 function on_game_start()
     RegisterScriptCallback("npc_on_before_hit", mai_on_npc_before_hit)

@@ -19,19 +19,15 @@
 --]]
 
 
-
---------------------------------------------------------------------------------
--- Local aliases for performance
---------------------------------------------------------------------------------
+-- ### Local aliases for performance
 
 local sf = string.find
 local ti = table.insert
 local tc = table.concat
 local rd = math.random
 
---------------------------------------------------------------------------------
--- Module variables
---------------------------------------------------------------------------------
+
+-- ### Module variables
 
 -- Anomaly cache - rebuilt after each surge/psy-storm
 local anomaly_cache = {}
@@ -54,9 +50,8 @@ local npc_last_update = {}
 -- Debug anomaly markers shown flag
 local debug_anomalies_shown = false
 
---------------------------------------------------------------------------------
--- MCM Integration
---------------------------------------------------------------------------------
+
+-- ### MCM Integration
 
 local function get_mcm_setting(key, default)
     if zz_allc0r3_mai_mcm then
@@ -81,9 +76,8 @@ local function update_mcm_cache()
     cached_show_debug_anomalies = get_mcm_setting("show_debug_anomalies", false)
 end
 
---------------------------------------------------------------------------------
--- Debug Logging
---------------------------------------------------------------------------------
+
+-- ### Debug Logging
 
 -- Basic debug log (restrictions, damage, deaths - important stuff)
 local function dbg_log(category, format, ...)
@@ -99,9 +93,9 @@ local function dbg_verbose(category, format, ...)
     printf("[%s][MAI][%s] %s", time_global(), category, msg)
 end
 
---------------------------------------------------------------------------------
--- Arrival Mod Compatibility
---------------------------------------------------------------------------------
+
+-- ### Arrival Mod Compatibility
+-- #TODO: Test this
 
 local arrival_checked = false
 local arrival_loaded = false
@@ -133,9 +127,8 @@ local function is_arrival_anomaly_active(anom_id, level_name)
     return true
 end
 
---------------------------------------------------------------------------------
--- Anomaly Cache System
---------------------------------------------------------------------------------
+
+-- ### Anomaly Cache System
 
 local function is_always_skip_anomaly(anom_name)
     local t = zz_allc0r3_mai_anomalies_settings.mai_always_ignore_anom
@@ -258,9 +251,8 @@ local function ensure_cache()
     end
 end
 
---------------------------------------------------------------------------------
--- NPC Checks
---------------------------------------------------------------------------------
+
+-- ### NPC Checks
 
 local function is_ignore_npc(npc)
     local id = npc:id()
@@ -389,9 +381,8 @@ local function configure_npc_anomaly_interaction(npc)
         npc:name(), npc:character_community(), tostring(should_damage), reason)
 end
 
---------------------------------------------------------------------------------
--- Rank and Movement State
---------------------------------------------------------------------------------
+
+-- ### Rank and Movement State
 
 -- Cached rank settings (avoid recreating tables on every call)
 local RANK_MCM_KEYS = {
@@ -462,9 +453,8 @@ local function get_movement_state_name(npc)
     return "unknown"
 end
 
---------------------------------------------------------------------------------
--- Pathfinding Restrictions
---------------------------------------------------------------------------------
+
+-- ### Pathfinding Restrictions
 
 -- Track NPC positions to detect if they're stuck
 local npc_positions = {}
@@ -610,9 +600,8 @@ local function update_npc_restrictions(npc, detection_radius)
     end
 end
 
---------------------------------------------------------------------------------
--- Damage System
---------------------------------------------------------------------------------
+
+-- ### Damage System
 
 function should_npc_take_damage(npc, anomaly)
     if not npc or not anomaly then return true end
@@ -671,9 +660,8 @@ function should_npc_take_damage(npc, anomaly)
     return takes_damage
 end
 
---------------------------------------------------------------------------------
--- Anomaly Before Activate Callback (First Line of Defense)
---------------------------------------------------------------------------------
+
+-- ### Anomaly Before Activate Callback (First Line of Defense)
 
 -- This callback is called by the engine BEFORE an anomaly tries to affect an object
 -- Returning false in flags.ret_value makes the anomaly completely ignore the object
@@ -705,9 +693,8 @@ local function on_anomaly_before_activate(zone, obj, flags)
     -- via the npc_on_before_hit callback for the actual damage roll
 end
 
---------------------------------------------------------------------------------
--- Armor Protection System
---------------------------------------------------------------------------------
+
+-- ### Armor Protection System
 
 -- Map anomaly patterns to protection stats (for pattern matching)
 local ANOMALY_PROTECTION_PATTERNS = {
@@ -834,18 +821,16 @@ function get_npc_dmg_mult(npc, anomaly)
     return damage_mult
 end
 
---------------------------------------------------------------------------------
--- Surge Detection
---------------------------------------------------------------------------------
+
+-- ### Surge Detection
 
 function surge_started()
     return (surge_manager and surge_manager.is_loaded() and surge_manager.is_started()) or
            (psi_storm_manager and psi_storm_manager.is_loaded() and psi_storm_manager.is_started())
 end
 
---------------------------------------------------------------------------------
--- Map Marker Cleanup (for old versions)
---------------------------------------------------------------------------------
+
+-- ### Map Marker Cleanup (for old versions)
 
 local function cleanup_old_map_markers()
     local count = 0
@@ -883,9 +868,8 @@ local function on_option_change()
     end
 end
 
---------------------------------------------------------------------------------
--- Debug Anomaly Map Markers (Issue 2 debugging)
---------------------------------------------------------------------------------
+
+-- ### Debug Anomaly Map Markers (Issue 2 debugging)
 
 -- Show all cached anomalies on the map for debugging
 function show_debug_anomaly_markers()
@@ -927,9 +911,8 @@ function hide_debug_anomaly_markers()
     end
 end
 
---------------------------------------------------------------------------------
--- Global Update Loop
---------------------------------------------------------------------------------
+
+-- ### Global Update Loop
 
 -- Check if current level should be ignored
 local function is_ignore_level()
@@ -1017,9 +1000,8 @@ local function on_actor_update()
     end
 end
 
---------------------------------------------------------------------------------
--- Callbacks
---------------------------------------------------------------------------------
+
+-- ### Callbacks
 
 -- Delay cache rebuild to allow Arrival mod to finish respawning anomalies
 -- Arrival uses: 0.5s delay for cleanup + 0.3s delay for spawn + queue processing
@@ -1115,9 +1097,8 @@ local function on_npc_net_spawn(npc)
     dbg_verbose("SPAWN", "NPC [%s] spawned, configured anomaly interaction", npc:name())
 end
 
---------------------------------------------------------------------------------
--- Initialization
---------------------------------------------------------------------------------
+
+-- ### Initialization
 
 function on_game_start()
     update_mcm_cache()
