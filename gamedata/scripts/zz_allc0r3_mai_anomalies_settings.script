@@ -1,5 +1,5 @@
 --[[
-    List of anomalies to always ignore
+    MAI Anomalies Settings - List of anomalies to always ignore
     Part of MAI (Mutant/Anomaly Interaction) by AllC0r3
     
     This file contains anomalies that NPCs should always ignore.
@@ -8,8 +8,10 @@
 
 mai_always_ignore_anom = {
 
-    --[ ANOMALY SECTIONS (patterns that match multiple anomalies) ]--
-
+    ----------------------------------------------------------------------------
+    -- ANOMALY SECTIONS (patterns that match multiple anomalies)
+    ----------------------------------------------------------------------------
+    
     -- Burning Fuzz
     "burning_fuzz",
     
@@ -58,10 +60,10 @@ mai_always_ignore_anom = {
     "agr_torrid_zone",
     "yan_tunnel_zone_zhar",  -- Bugged anomaly without radius
     
-
-
-    --[ ANOMALIES WITHOUT RADIUS (must be ignored to prevent errors) ]--
-
+    ----------------------------------------------------------------------------
+    -- ANOMALIES WITHOUT RADIUS (must be ignored to prevent errors)
+    ----------------------------------------------------------------------------
+    
     "red_zone_mine_electric_weak",
     "red_zone_mine_thermal_strong_0018",
     "red_zone_mine_thermal_strong_0004",
@@ -76,10 +78,10 @@ mai_always_ignore_anom = {
     "red_zone_mine_thermal_strong_0023",
     "red_zone_mine_thermal_strong_0003",
     
-
-
-    --[ SPECIFIC ANOMALY NAMES (by location) ]--
-
+    ----------------------------------------------------------------------------
+    -- SPECIFIC ANOMALY NAMES (by location)
+    ----------------------------------------------------------------------------
+    
     -- Cordon: Field between North Checkpoint and Bridge, near the dam
     "esc_zone_mine_gravitational_weak_0025",
     "esc_zone_mine_gravitational_weak_0028",
@@ -163,5 +165,5 @@ mai_always_ignore_anom = {
     -- Army Warehouses: Burner inside house at the farmstead
     "mil_zone_zharka_static_strong_0003",
     
-    -- List should be extended in upcoming updates.
+    -- Need more... Will add in next update.
 }

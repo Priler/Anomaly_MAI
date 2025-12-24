@@ -1,5 +1,5 @@
 --[[
-    Levels where anomaly evasion is disabled
+    MAI Location Settings - Levels where anomaly evasion is disabled
     Part of MAI (Mutant/Anomaly Interaction) by AllC0r3
     
     Anomaly evasion is disabled on these levels because they are:
@@ -22,6 +22,6 @@ mai_always_ignore_levels = {
     
     -- Small locations
     ["l11_hospital"]            = true,     -- Hospital - too small
-    -- ["y04_pole"]             = true,     -- Pole excluded, as it's kinda fun with anomalies enabled xD
+    -- ["y04_pole"]             = true,     -- Pole - removed, has anomalies worth avoiding
     ["zorius_atp_balls"]        = true,     -- Small location
 }

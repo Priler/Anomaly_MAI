@@ -1,3 +1,10 @@
+--[[
+    MAI MCM Options - Mod Configuration Menu integration
+
+    Configuration for the lightweight MAI system.
+--]]
+
+
 -- ### Default Settings
 
 local defaults = {
@@ -16,6 +23,11 @@ local defaults = {
     -- Effect radius settings
     effect_radius = 300,                   -- NPCs outside this radius are protected from damage
     restrictions_ignore_radius = true,     -- Apply pathfinding restrictions regardless of effect radius
+    
+    -- Experimental: Active flee system
+    active_flee_enabled = false,           -- When stuck, actively flee from anomalies instead of just clearing restrictions
+    active_flee_min_distance = 15,         -- Minimum distance to flee from anomaly
+    active_flee_max_distance = 40,         -- Maximum search distance for safe position
     
     -- Damage settings
     enable_armor_damage_mult = true,       -- Use outfit-based damage multipliers
@@ -166,6 +178,40 @@ function on_mcm_load()
                 val = 1,
                 def = true,
                 hint = "mai_restrictions_ignore_radius",
+            },
+            
+            -- Experimental Settings
+            {
+                id = "experimental",
+                type = "title",
+                text = "ui_mcm_mai_experimental_title"
+            },
+            {
+                id = "active_flee_enabled",
+                type = "check",
+                val = 1,
+                def = false,
+                hint = "mai_active_flee_enabled",
+            },
+            {
+                id = "active_flee_min_distance",
+                type = "track",
+                val = 2,
+                min = 5,
+                max = 30,
+                step = 5,
+                def = 15,
+                hint = "mai_active_flee_min_distance",
+            },
+            {
+                id = "active_flee_max_distance",
+                type = "track",
+                val = 2,
+                min = 20,
+                max = 80,
+                step = 10,
+                def = 40,
+                hint = "mai_active_flee_max_distance",
             },
             
             -- Damage Settings

@@ -1,6 +1,6 @@
 --[[
     MAI (Mutant/Anomaly Interaction) by Priler (original idea/mod by AllC0r3)
-    Version: 2.3
+    Version: 2.4
 
     Features:
     - Lightweight anomaly cache (rebuilt only after surge/psy-storm)
@@ -9,6 +9,7 @@
     - Effect radius system from Beef's NPCs Dies in Anomalies mod (configurable via MCM)
     - Arrival mod compatibility
     - anomaly_on_before_activate callback for efficient NPC protection (v2.3)
+    - Experimental: Active flee system for stuck NPCs (v2.4)
     
     Design:
     - Cache anomalies once after surge, reuse until next surge
@@ -95,7 +96,6 @@ end
 
 
 -- ### Arrival Mod Compatibility
--- #TODO: Test this
 
 local arrival_checked = false
 local arrival_loaded = false
@@ -193,6 +193,12 @@ local function rebuild_anomaly_cache()
                         -- Validate position before adding to cache
                         local pos = anom_obj:position()
                         if pos and pos.x and pos.y and pos.z then
+                            -- Make anomaly a restrictor so AI pathfinding avoids it
+                            -- restrictor_type 3 = "in" restrictor (NPCs can't enter)
+                            if anom_obj.set_restrictor_type then
+                                anom_obj:set_restrictor_type(3)
+                            end
+                            
                             ti(anomaly_cache, {
                                 id = anom_id,
                                 name = anom_name,
@@ -308,6 +314,9 @@ end
 -- Returns: enabled (bool), reason (string)
 -- Note: Caller must verify npc is valid, alive, and IsStalker before calling
 local function should_enable_anomaly_damage(npc)
+    -- Safety: never process the actor
+    if npc:id() == 0 then return true, "actor" end
+    
     local community = npc:character_community()
     
     -- Full ignore - no damage (greh)
@@ -463,6 +472,110 @@ local npc_unstuck_until = {}  -- Track when NPC can receive restrictions again
 
 local UNSTUCK_COOLDOWN = 20000  -- 20 seconds before NPC can get restrictions again after being unstuck
 
+
+-- ### Active Flee System (Experimental)
+
+-- Find the closest anomaly to the NPC
+local function find_closest_anomaly(npc_pos)
+    local closest = nil
+    local closest_dist = 99999
+    
+    for _, anom in ipairs(anomaly_cache) do
+        local dist = anom.pos:distance_to(npc_pos)
+        if dist < closest_dist then
+            closest_dist = dist
+            closest = anom
+        end
+    end
+    
+    return closest, closest_dist
+end
+
+-- Find a safe position away from an anomaly using vanilla cover-finding
+local function find_safe_position_from_anomaly(npc, anomaly_pos)
+    local min_dist = get_mcm_setting("active_flee_min_distance", 15)
+    local max_dist = get_mcm_setting("active_flee_max_distance", 40)
+    
+    -- Method 1: Use vanilla find_close_cover (treats anomaly as "enemy" to hide from)
+    if utils_obj and utils_obj.find_close_cover then
+        local cover_vid = utils_obj.find_close_cover(
+            npc,                -- NPC object
+            npc:position(),     -- Search from NPC's current position
+            anomaly_pos,        -- "Hide" from the anomaly
+            5,                  -- Initial cover search distance
+            min_dist,           -- Minimum distance from anomaly
+            max_dist            -- Maximum distance to search
+        )
+        
+        if cover_vid then
+            return cover_vid
+        end
+    end
+    
+    -- Method 2: Fallback - find vertex in opposite direction
+    local npc_pos = npc:position()
+    local away_dir = vector():set(
+        npc_pos.x - anomaly_pos.x,
+        0,
+        npc_pos.z - anomaly_pos.z
+    )
+    away_dir:normalize()
+    
+    local base_vid = npc:level_vertex_id()
+    
+    -- Try to find vertex in that direction at increasing distances
+    for dist = min_dist, max_dist, 5 do
+        local test_vid = level.vertex_in_direction(base_vid, away_dir, dist)
+        if test_vid and test_vid < 4294967295 and npc:accessible(test_vid) then
+            -- Verify this position is actually far enough from anomaly
+            local test_pos = level.vertex_position(test_vid)
+            if test_pos:distance_to(anomaly_pos) >= min_dist then
+                return test_vid
+            end
+        end
+    end
+    
+    -- Method 3: Try different angles if direct path blocked
+    for angle = 45, 315, 45 do
+        local rotated_dir = vector_rotate_y(away_dir, angle)
+        local test_vid = level.vertex_in_direction(base_vid, rotated_dir, min_dist)
+        if test_vid and test_vid < 4294967295 and npc:accessible(test_vid) then
+            return test_vid
+        end
+    end
+    
+    return nil  -- No safe position found
+end
+
+-- Make NPC actively flee from anomaly
+local function flee_from_anomaly(npc, anomaly_pos, anomaly_name)
+    local safe_vid = find_safe_position_from_anomaly(npc, anomaly_pos)
+    
+    if safe_vid then
+        -- Set destination
+        npc:set_dest_level_vertex_id(safe_vid)
+        
+        -- Make them run using state_mgr if available
+        if state_mgr and state_mgr.set_state then
+            pcall(function()
+                state_mgr.set_state(npc, "sprint", nil, nil, nil, {fast_set = true})
+            end)
+        end
+        
+        dbg_log("FLEE", "NPC [%s] actively fleeing from [%s] to vertex %d", 
+            npc:name(), anomaly_name, safe_vid)
+        
+        return true
+    end
+    
+    dbg_log("FLEE", "NPC [%s] could not find safe position from [%s]", 
+        npc:name(), anomaly_name)
+    return false
+end
+
+
+-- ### Stuck Detection
+
 local function get_nearby_anomalies(npc_pos, radius)
     local result = {}
     for _, anom in ipairs(anomaly_cache) do
@@ -551,10 +664,37 @@ local function update_npc_restrictions(npc, detection_radius)
     
     -- Check if NPC is stuck
     if check_npc_stuck(npc, npc_pos) then
-        clear_npc_restrictions(npc)
+        -- Check if active flee is enabled
+        local active_flee_enabled = get_mcm_setting("active_flee_enabled", false)
+        
+        if active_flee_enabled then
+            -- Find closest anomaly and flee from it
+            local closest_anom, closest_dist = find_closest_anomaly(npc_pos)
+            if closest_anom then
+                dbg_log("STUCK", "NPC [%s] stuck near [%s] (%.1fm), attempting active flee", 
+                    npc:name(), closest_anom.name, closest_dist)
+                
+                -- Clear restrictions first so NPC can move freely
+                clear_npc_restrictions(npc)
+                
+                -- Try to flee
+                if flee_from_anomaly(npc, closest_anom.pos, closest_anom.name) then
+                    dbg_log("STUCK", "NPC [%s] active flee successful", npc:name())
+                else
+                    dbg_log("STUCK", "NPC [%s] active flee failed, using fallback", npc:name())
+                end
+            else
+                -- No anomaly found, just clear restrictions
+                clear_npc_restrictions(npc)
+            end
+        else
+            -- Original behavior: just clear restrictions
+            clear_npc_restrictions(npc)
+            dbg_log("STUCK", "NPC [%s] unstuck (restrictions cleared)", npc:name())
+        end
+        
         -- Set cooldown - NPC won't get new restrictions for 20 seconds
         npc_unstuck_until[id] = current_time + UNSTUCK_COOLDOWN
-        dbg_log("STUCK", "NPC [%s] unstuck, cooldown for 20s", npc:name())
         return
     end
     
@@ -671,8 +811,13 @@ local function on_anomaly_before_activate(zone, obj, flags)
     -- Only process if mod is enabled
     if not is_mod_enabled() then return end
     
-    -- Only process stalkers (vanilla already handles dead NPCs)
+    -- Skip if no object
     if not obj then return end
+    
+    -- IMPORTANT: Skip the player! We only want to affect NPCs
+    if obj:id() == 0 then return end  -- Actor always has id 0
+    
+    -- Only process stalkers (vanilla already handles dead NPCs)
     if not IsStalker(obj) then return end
     if not obj:alive() then return end
     
@@ -1120,6 +1265,6 @@ function on_game_start()
     RegisterScriptCallback("actor_on_level_changed", on_level_changed)
     
     local arrival_status = is_arrival_loaded() and "detected" or "not detected"
-    dbg_log("INIT", "MAI v2.3 loaded - mod_enabled=%s, debug=%s, Arrival: %s", 
+    dbg_log("INIT", "MAI v2.4 loaded - mod_enabled=%s, debug=%s, Arrival: %s", 
         tostring(cached_mod_enabled), tostring(cached_debug_mode), arrival_status)
 end

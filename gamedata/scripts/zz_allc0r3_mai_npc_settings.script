@@ -1,10 +1,12 @@
 --[[
+    MAI NPC Settings - Version 3.0
+    
     This file contains:
     - demonized_ignore_npc: List of specific NPCs to ignore (traders, quest givers, story NPCs)
     - mai_always_full_ignore_community: Communities completely ignored (no restrictions, no damage)
     - mai_always_damage_ignore_community: Communities that ignore damage but still get restrictions
     
-    Note: Faction/rank detection settings have been moved to MCM
+    Note: Faction/rank detection settings have been moved to MCM in v3.0
 --]]
 
 demonized_ignore_npc = {

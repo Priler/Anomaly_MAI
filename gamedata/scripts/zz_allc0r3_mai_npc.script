@@ -1,4 +1,6 @@
 --[[
+    MAI NPC Script - Damage handling
+    
     This script handles:
     - NPC damage from anomalies (decides if damage should apply)
     - Damage multiplier based on armor
