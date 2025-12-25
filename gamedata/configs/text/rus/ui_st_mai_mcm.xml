@@ -25,7 +25,7 @@
     </string>
     
     <string id="ui_mcm_mai_rank_title">
-        <text>Шанс промаха по рангам (%%)</text>
+        <text>Шанс промаха по рангам (%)</text>
     </string>
     
     <!-- General Settings -->
@@ -164,14 +164,14 @@
         <text>Урон с учётом брони</text>
     </string>
     <string id="ui_mcm_mai_enable_armor_damage_mult_desc">
-        <text>Применять множители урона в зависимости от брони НПС. Значения защиты читаются из конфигов брони (ожог, шок, химия, радиация, пси, удар). Экзоскелет с защитой от шока 0.7 получает только 30%% урона от электроаномалий.</text>
+        <text>Применять множители урона в зависимости от брони НПС. Значения защиты читаются из конфигов брони (ожог, шок, химия, радиация, пси, удар). Экзоскелет с защитой от шока 0.7 получает только 30% урона от электроаномалий.</text>
     </string>
     
     <string id="ui_mcm_mai_immune_zero_miss_chance">
-        <text>Иммунитет при 0%% шансе промаха</text>
+        <text>Иммунитет при 0% шансе промаха</text>
     </string>
     <string id="ui_mcm_mai_immune_zero_miss_chance_desc">
-        <text>НПС с 0%% шансом промаха (ветераны и выше) становятся полностью невосприимчивы к урону аномалий. Страховка для опытных сталкеров. По умолчанию: Вкл.</text>
+        <text>НПС с 0% шансом промаха (ветераны и выше) становятся полностью невосприимчивы к урону аномалий. Страховка для опытных сталкеров. По умолчанию: Вкл.</text>
     </string>
     
     <string id="ui_mcm_mai_block_anomalies_on_corpses">
@@ -215,56 +215,56 @@
         <text>Новичок</text>
     </string>
     <string id="ui_mcm_mai_rank_novice_miss_chance_desc">
-        <text>Базовый шанс промаха для новичков. 100%% = всегда может влететь в аномалию. По умолчанию: 100%%</text>
+        <text>Базовый шанс промаха для новичков. 100% = всегда может влететь в аномалию. По умолчанию: 100%</text>
     </string>
     
     <string id="ui_mcm_mai_rank_trainee_miss_chance">
         <text>Стажёр</text>
     </string>
     <string id="ui_mcm_mai_rank_trainee_miss_chance_desc">
-        <text>Базовый шанс промаха для стажёров. По умолчанию: 75%%</text>
+        <text>Базовый шанс промаха для стажёров. По умолчанию: 75%</text>
     </string>
     
     <string id="ui_mcm_mai_rank_experienced_miss_chance">
         <text>Опытный</text>
     </string>
     <string id="ui_mcm_mai_rank_experienced_miss_chance_desc">
-        <text>Базовый шанс промаха для опытных сталкеров. По умолчанию: 50%%</text>
+        <text>Базовый шанс промаха для опытных сталкеров. По умолчанию: 50%</text>
     </string>
     
     <string id="ui_mcm_mai_rank_professional_miss_chance">
         <text>Профессионал</text>
     </string>
     <string id="ui_mcm_mai_rank_professional_miss_chance_desc">
-        <text>Базовый шанс промаха для профессионалов. По умолчанию: 25%%</text>
+        <text>Базовый шанс промаха для профессионалов. По умолчанию: 25%</text>
     </string>
     
     <string id="ui_mcm_mai_rank_veteran_miss_chance">
         <text>Ветеран</text>
     </string>
     <string id="ui_mcm_mai_rank_veteran_miss_chance_desc">
-        <text>Базовый шанс промаха для ветеранов. 0%% = никогда не влетает в аномалии. По умолчанию: 0%%</text>
+        <text>Базовый шанс промаха для ветеранов. 0% = никогда не влетает в аномалии. По умолчанию: 0%</text>
     </string>
     
     <string id="ui_mcm_mai_rank_expert_miss_chance">
         <text>Эксперт</text>
     </string>
     <string id="ui_mcm_mai_rank_expert_miss_chance_desc">
-        <text>Базовый шанс промаха для экспертов. По умолчанию: 0%%</text>
+        <text>Базовый шанс промаха для экспертов. По умолчанию: 0%</text>
     </string>
     
     <string id="ui_mcm_mai_rank_master_miss_chance">
         <text>Мастер</text>
     </string>
     <string id="ui_mcm_mai_rank_master_miss_chance_desc">
-        <text>Базовый шанс промаха для мастеров. По умолчанию: 0%%</text>
+        <text>Базовый шанс промаха для мастеров. По умолчанию: 0%</text>
     </string>
     
     <string id="ui_mcm_mai_rank_legend_miss_chance">
         <text>Легенда</text>
     </string>
     <string id="ui_mcm_mai_rank_legend_miss_chance_desc">
-        <text>Базовый шанс промаха для легенд. По умолчанию: 0%%</text>
+        <text>Базовый шанс промаха для легенд. По умолчанию: 0%</text>
     </string>
     
 </string_table>
