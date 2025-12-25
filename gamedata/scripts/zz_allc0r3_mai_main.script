@@ -54,6 +54,11 @@ local npc_last_update = {}
 -- Debug anomaly markers shown flag
 local debug_anomalies_shown = false
 
+-- Track last anomaly that damaged each NPC (for death attribution)
+-- Format: npc_last_anomaly[npc_id] = { name = "zone_name", section = "zone_section", time = time_global() }
+local npc_last_anomaly = {}
+local ANOMALY_ATTRIBUTION_TIMEOUT = 5000  -- 5 seconds
+
 
 -- ### MCM Integration
 
@@ -1031,6 +1036,16 @@ local function on_anomaly_before_activate(zone, obj, flags)
     dbg_log("DAMAGE", "NPC [%s] (rank: %s, state: %s) walked into [%s] - taking damage", 
         obj:name(), rank, state, zone:name())
     
+    -- Track this anomaly for death attribution (store state at time of damage)
+    npc_last_anomaly[obj:id()] = {
+        name = zone:name(),
+        section = zone:section(),
+        time = time_global(),
+        state = state,
+        rank = rank,
+        community = obj:character_community() or "unknown"
+    }
+    
     -- Damage goes through, armor reduction happens in npc_on_before_hit
 end
 
@@ -1253,6 +1268,89 @@ function hide_debug_anomaly_markers()
 end
 
 
+-- ### Anomaly Death Detection
+
+-- Translate community IDs to readable faction names
+local FACTION_NAMES = {
+    ["stalker"] = "Loner",
+    ["bandit"] = "Bandit",
+    ["dolg"] = "Duty",
+    ["freedom"] = "Freedom",
+    ["monolith"] = "Monolith",
+    ["army"] = "Military",
+    ["ecolog"] = "Ecologist",
+    ["killer"] = "Mercenary",
+    ["greh"] = "Sin",
+    ["renegade"] = "Renegade",
+    ["isg"] = "ISG",
+    ["csky"] = "Clear Sky",
+    ["zombied"] = "Zombie",
+    ["actor_"] = "Actor",  -- just in case
+}
+
+local function get_faction_name(community)
+    if not community then return "Unknown" end
+    return FACTION_NAMES[community] or community
+end
+
+-- Report anomaly death with notification
+local function report_anomaly_death(npc, anomaly_info)
+    if not is_debug_enabled() then return end
+    if not IsStalker(npc) then return end
+    
+    local victim_name = npc:name() or "unknown"
+    
+    -- Use stored info from when damage happened (more accurate)
+    local victim_community = anomaly_info.community or npc:character_community() or "unknown"
+    local victim_rank = anomaly_info.rank or "unknown"
+    local victim_state = anomaly_info.state or "unknown"
+    
+    -- Translate faction to readable name
+    local faction_name = get_faction_name(victim_community)
+    
+    -- Fallback for rank if not stored
+    if victim_rank == "unknown" and ranks and ranks.get_obj_rank_name then
+        victim_rank = ranks.get_obj_rank_name(npc) or "unknown"
+    end
+    
+    -- Log to console
+    printf("[MAI][DEATH] %s (%s %s) killed by %s (%s) while %s", 
+        victim_name, victim_rank, faction_name, anomaly_info.name, anomaly_info.section, victim_state)
+    
+    -- Show news message
+    if db.actor then
+        local news_text = string.format("%s (%s %s) killed by %s while %s", 
+            victim_name, victim_rank, faction_name, anomaly_info.section, victim_state)
+        
+        db.actor:give_game_news("MAI: Anomaly Kill", news_text, "ui_inGame2_PD_Dengi", 0, 5000, 0)
+    end
+end
+
+-- Check if any tracked NPCs died from anomalies
+local function check_anomaly_deaths(current_time)
+    -- Iterate through tracked NPCs
+    for npc_id, anomaly_info in pairs(npc_last_anomaly) do
+        -- Check if tracking has expired
+        if (current_time - anomaly_info.time) > ANOMALY_ATTRIBUTION_TIMEOUT then
+            npc_last_anomaly[npc_id] = nil
+        else
+            -- Check if NPC is now dead
+            local npc = level.object_by_id(npc_id)
+            if npc then
+                if not npc:alive() and not anomaly_info.reported then
+                    -- NPC died while tracked - report death
+                    anomaly_info.reported = true
+                    report_anomaly_death(npc, anomaly_info)
+                end
+            else
+                -- NPC no longer exists, clean up
+                npc_last_anomaly[npc_id] = nil
+            end
+        end
+    end
+end
+
+
 -- ### Global Update Loop
 
 -- Check if current level should be ignored
@@ -1289,6 +1387,9 @@ local function on_actor_update()
     if current_time < global_update_timer then return end
     
     global_update_timer = current_time + UPDATE_INTERVAL
+    
+    -- Check for anomaly deaths (NPCs we tracked that are now dead)
+    check_anomaly_deaths(current_time)
     
     -- Ensure cache is valid
     ensure_cache()
@@ -1454,8 +1555,10 @@ function on_game_start()
     -- Anomaly protection callback (first line of defense - blocks anomaly activation)
     RegisterScriptCallback("anomaly_on_before_activate", on_anomaly_before_activate)
     
-    -- NPC damage callback (second line of defense - damage roll for NPCs that CAN take damage)
+    -- NPC damage callback (armor reduction)
     RegisterScriptCallback("npc_on_before_hit", on_npc_before_hit)
+    
+    -- Note: Death detection is done via update loop checking npc_last_anomaly tracking
     
     -- Cache invalidation callbacks
     RegisterScriptCallback("surge_manager_end_surge", on_surge_end)
