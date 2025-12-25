@@ -133,6 +133,32 @@
         <text>Seconds before NPC can receive new anomaly restrictions after fleeing. Higher values give NPCs more time to move away. Default: 30s</text>
     </string>
     
+    <!-- Bolt Throwing Control -->
+    <string id="ui_mcm_mai_bolt_title">
+        <text>Bolt Throwing Control</text>
+    </string>
+    
+    <string id="ui_mcm_mai_smart_bolt_throwing">
+        <text>Smart Bolt Throwing</text>
+    </string>
+    <string id="ui_mcm_mai_smart_bolt_throwing_desc">
+        <text>NPCs only throw bolts when near multiple anomalies (dense anomaly field). Prevents constant bolt throwing near single anomalies. Default: Enabled</text>
+    </string>
+    
+    <string id="ui_mcm_mai_bolt_min_anomalies">
+        <text>Min Anomalies for Bolts</text>
+    </string>
+    <string id="ui_mcm_mai_bolt_min_anomalies_desc">
+        <text>Minimum number of anomalies nearby for NPC to start throwing bolts. Lower = more bolt throwing. Default: 3</text>
+    </string>
+    
+    <string id="ui_mcm_mai_bolt_cluster_radius">
+        <text>Cluster Detection Radius</text>
+    </string>
+    <string id="ui_mcm_mai_bolt_cluster_radius_desc">
+        <text>Radius (in meters) to check for anomaly clusters. Anomalies within this distance count toward the minimum. Default: 25m</text>
+    </string>
+    
     <!-- Damage Settings -->
     <string id="ui_mcm_mai_enable_armor_damage_mult">
         <text>Outfit-based Damage</text>

@@ -1,6 +1,6 @@
 --[[
     MAI (Mutant/Anomaly Interaction) by Priler (original idea/mod by AllC0r3)
-    Version: 2.4
+    Version: 2.5
 
     Features:
     - Lightweight anomaly cache (rebuilt only after surge/psy-storm)
@@ -8,8 +8,10 @@
     - Damage roll based on rank + movement state
     - Effect radius system from Beef's NPCs Dies in Anomalies mod (configurable via MCM)
     - Arrival mod compatibility
-    - anomaly_on_before_activate callback for efficient NPC protection (v2.3)
-    - Experimental: Active flee system for stuck NPCs (v2.4)
+    - anomaly_on_before_activate callback for efficient NPC protection
+    - Active flee system for stuck NPCs
+    - Engine-level anomaly control (set_enable_anomalies_damage/pathfinding)
+    - Smart bolt throwing control (v2.5)
     
     Design:
     - Cache anomalies once after surge, reuse until next surge
@@ -17,6 +19,7 @@
     - No subscribe/unsubscribe system
     - Two-layer protection: anomaly_on_before_activate blocks protected NPCs,
       damage callback handles rank-based rolls for normal NPCs
+    - restrictor_type(3) disables engine's automatic bolt/escape behavior
 --]]
 
 
@@ -193,10 +196,11 @@ local function rebuild_anomaly_cache()
                         -- Validate position before adding to cache
                         local pos = anom_obj:position()
                         if pos and pos.x and pos.y and pos.z then
-                            -- Make anomaly a restrictor so AI pathfinding avoids it
-                            -- restrictor_type 3 = "in" restrictor (NPCs can't enter)
+                            -- Set restrictor_type to None (3) so engine's inside_anomaly() returns false
+                            -- This prevents engine's built-in bolt throwing and escape behavior
+                            -- We handle pathfinding via add_restrictions() and damage via set_enable_anomalies_damage()
                             if anom_obj.set_restrictor_type then
-                                anom_obj:set_restrictor_type(3)
+                                anom_obj:set_restrictor_type(3)  -- 3=None, 4=In, 5=Out
                             end
                             
                             ti(anomaly_cache, {
@@ -386,8 +390,107 @@ local function configure_npc_anomaly_interaction(npc)
     local should_damage, reason = should_enable_anomaly_damage(npc)
     npc:set_enable_anomalies_damage(should_damage)
     
+    -- Enable anomaly pathfinding (engine handles avoidance)
+    -- This makes NPCs aware of anomalies for pathfinding purposes
+    npc:set_enable_anomalies_pathfinding(true)
+    
     dbg_verbose("CONFIG", "NPC [%s] community [%s] damage=%s (%s)", 
         npc:name(), npc:character_community(), tostring(should_damage), reason)
+end
+
+-- Check if there's a cluster of anomalies (multiple close together)
+-- Returns true if bolt throwing makes sense (dense anomaly field)
+local function is_anomaly_cluster(npc_pos, min_count, cluster_radius)
+    min_count = min_count or 3
+    cluster_radius = cluster_radius or 20
+    
+    local count = 0
+    for _, anom in ipairs(anomaly_cache) do
+        if anom.pos:distance_to(npc_pos) <= cluster_radius then
+            count = count + 1
+            if count >= min_count then
+                return true
+            end
+        end
+    end
+    return false
+end
+
+-- Check what anomalies an NPC is actually touching (engine-level accuracy)
+local function get_touching_anomalies(npc)
+    local touching = {}
+    local success = pcall(function()
+        npc:iterate_feel_touch(function(id)
+            local obj = level.object_by_id(id)
+            if obj and obj.is_anomaly and obj:is_anomaly() then
+                ti(touching, {
+                    id = id,
+                    name = obj:name(),
+                    pos = obj:position()
+                })
+            end
+        end)
+    end)
+    return touching
+end
+
+-- Reset NPC's anomaly world property to stop bolt throwing
+-- Returns true if successful
+local function reset_anomaly_property(npc)
+    local planner = npc:motivation_action_manager()
+    if not planner then 
+        dbg_verbose("BOLT", "NPC [%s] has no action planner", npc:name())
+        return false 
+    end
+    if not planner.storage then 
+        dbg_verbose("BOLT", "NPC [%s] planner has no storage", npc:name())
+        return false 
+    end
+    
+    -- eWorldPropertyAnomaly = 68 (from stalker_decision_space.h)
+    local success, err = pcall(function()
+        planner.storage:set_property(68, false)
+    end)
+    
+    if not success then
+        dbg_verbose("BOLT", "Failed to reset anomaly property for [%s]: %s", npc:name(), tostring(err))
+    end
+    return success
+end
+
+-- Control NPC bolt throwing behavior
+-- NPCs should only throw bolts when facing dense anomaly fields
+local function control_npc_bolt_throwing(npc)
+    if not npc or not npc:alive() then return end
+    if not IsStalker(npc) then return end
+    
+    local use_smart_bolts = get_mcm_setting("smart_bolt_throwing", true)
+    
+    if not use_smart_bolts then
+        return  -- default behavior - engine decides
+    end
+    
+    local npc_pos = npc:position()
+    
+    -- First check if NPC is actually touching any anomalies
+    local touching = get_touching_anomalies(npc)
+    if #touching == 0 then
+        -- Not touching anything - no need to throw bolts
+        reset_anomaly_property(npc)
+        return
+    end
+    
+    -- NPC is touching anomalies - check if there's a cluster
+    local min_anomalies = get_mcm_setting("bolt_min_anomalies", 3)
+    local cluster_radius = get_mcm_setting("bolt_cluster_radius", 25)
+    local has_cluster = is_anomaly_cluster(npc_pos, min_anomalies, cluster_radius)
+    
+    if not has_cluster then
+        -- No dense anomaly field - reset anomaly property to stop bolt throwing
+        reset_anomaly_property(npc)
+        dbg_verbose("BOLT", "NPC [%s] touching %d anomalies but no cluster, suppressing bolts", 
+            npc:name(), #touching)
+    end
 end
 
 
@@ -491,16 +594,25 @@ local function find_closest_anomaly(npc_pos)
     return closest, closest_dist
 end
 
--- Find a safe position away from an anomaly using vanilla cover-finding
+-- Find a safe position away from an anomaly using multiple methods
 local function find_safe_position_from_anomaly(npc, anomaly_pos)
     local min_dist = get_mcm_setting("active_flee_min_distance", 15)
     local max_dist = get_mcm_setting("active_flee_max_distance", 40)
+    local npc_pos = npc:position()
+    
+    -- Calculate direction away from anomaly
+    local away_dir = vector():set(
+        npc_pos.x - anomaly_pos.x,
+        0,
+        npc_pos.z - anomaly_pos.z
+    )
+    away_dir:normalize()
     
     -- Method 1: Use vanilla find_close_cover (treats anomaly as "enemy" to hide from)
     if utils_obj and utils_obj.find_close_cover then
         local cover_vid = utils_obj.find_close_cover(
             npc,                -- NPC object
-            npc:position(),     -- Search from NPC's current position
+            npc_pos,            -- Search from NPC's current position
             anomaly_pos,        -- "Hide" from the anomaly
             5,                  -- Initial cover search distance
             min_dist,           -- Minimum distance from anomaly
@@ -512,15 +624,26 @@ local function find_safe_position_from_anomaly(npc, anomaly_pos)
         end
     end
     
-    -- Method 2: Fallback - find vertex in opposite direction
-    local npc_pos = npc:position()
-    local away_dir = vector():set(
-        npc_pos.x - anomaly_pos.x,
-        0,
-        npc_pos.z - anomaly_pos.z
+    -- Method 2: Use accessible_nearest to find closest accessible point in flee direction
+    local target_pos = vector():set(
+        npc_pos.x + away_dir.x * max_dist,
+        npc_pos.y,
+        npc_pos.z + away_dir.z * max_dist
     )
-    away_dir:normalize()
     
+    local result_pos = vector()
+    local success, accessible_vid = pcall(function()
+        return npc:accessible_nearest(target_pos, result_pos)
+    end)
+    
+    if success and accessible_vid and accessible_vid < 4294967295 then
+        -- verify it's far enough from anomaly
+        if result_pos:distance_to(anomaly_pos) >= min_dist then
+            return accessible_vid
+        end
+    end
+    
+    -- Method 3: Fallback - find vertex in opposite direction
     local base_vid = npc:level_vertex_id()
     
     -- Try to find vertex in that direction at increasing distances
@@ -535,7 +658,7 @@ local function find_safe_position_from_anomaly(npc, anomaly_pos)
         end
     end
     
-    -- Method 3: Try different angles if direct path blocked
+    -- Method 4: Try different angles if direct path blocked
     for angle = 45, 315, 45 do
         local rotated_dir = vector_rotate_y(away_dir, angle)
         local test_vid = level.vertex_in_direction(base_vid, rotated_dir, min_dist)
@@ -587,6 +710,13 @@ local function get_nearby_anomalies(npc_pos, radius)
     return result
 end
 
+-- Check if NPC is actually inside anomaly using engine's feel_touch
+-- More accurate than distance checks
+local function is_npc_inside_anomaly(npc)
+    local touching = get_touching_anomalies(npc)
+    return #touching > 0, touching
+end
+
 -- Check if NPC is stuck (hasn't moved significantly)
 -- Returns: is_stuck, is_urgent (close to anomaly)
 local function check_npc_stuck(npc, current_pos, nearby_anomalies)
@@ -607,6 +737,16 @@ local function check_npc_stuck(npc, current_pos, nearby_anomalies)
         npc_stuck_count[id] = (npc_stuck_count[id] or 0) + 1
     else
         npc_stuck_count[id] = 0
+    end
+    
+    -- Check if NPC is actually touching an anomaly (urgent!) using engine
+    local is_touching, touching_list = is_npc_inside_anomaly(npc)
+    if is_touching then
+        -- NPC is physically inside an anomaly - this is always urgent!
+        if npc_stuck_count[id] >= 1 then  -- Even 1 tick stuck inside = urgent
+            dbg_verbose("STUCK", "NPC [%s] is INSIDE anomaly (feel_touch), urgent flee needed", npc:name())
+            return true, true
+        end
     end
     
     -- Check if NPC is very close to any nearby anomaly (urgent situation)
@@ -1180,6 +1320,7 @@ local function on_actor_update()
             -- Outside radius: always protect NPC from damage
             if within_radius then
                 configure_npc_anomaly_interaction(npc)
+                control_npc_bolt_throwing(npc)
             else
                 npc:set_enable_anomalies_damage(false)
             end

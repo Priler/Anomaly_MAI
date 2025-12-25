@@ -30,6 +30,11 @@ local defaults = {
     active_flee_max_distance = 40,         -- Maximum search distance for safe position
     active_flee_cooldown = 30,             -- Seconds before NPC can get restrictions again after fleeing
     
+    -- Bolt throwing control
+    smart_bolt_throwing = true,            -- Only throw bolts when multiple anomalies are nearby
+    bolt_min_anomalies = 3,                -- Minimum anomalies to trigger bolt throwing
+    bolt_cluster_radius = 25,              -- Radius to check for anomaly cluster
+    
     -- Damage settings
     enable_armor_damage_mult = true,       -- Use outfit-based damage multipliers
     immune_zero_miss_chance = true,        -- NPCs with 0% miss chance are immune
@@ -224,6 +229,40 @@ function on_mcm_load()
                 step = 5,
                 def = 30,
                 hint = "mai_active_flee_cooldown",
+            },
+            
+            -- Bolt Throwing Control
+            {
+                id = "bolt_control",
+                type = "title",
+                text = "ui_mcm_mai_bolt_title"
+            },
+            {
+                id = "smart_bolt_throwing",
+                type = "check",
+                val = 1,
+                def = true,
+                hint = "mai_smart_bolt_throwing",
+            },
+            {
+                id = "bolt_min_anomalies",
+                type = "track",
+                val = 2,
+                min = 2,
+                max = 10,
+                step = 1,
+                def = 3,
+                hint = "mai_bolt_min_anomalies",
+            },
+            {
+                id = "bolt_cluster_radius",
+                type = "track",
+                val = 2,
+                min = 10,
+                max = 50,
+                step = 5,
+                def = 25,
+                hint = "mai_bolt_cluster_radius",
             },
             
             -- Damage Settings

@@ -133,6 +133,32 @@
         <text>Сколько секунд НПС не получает новые ограничения после отступления. Большее значение даёт НПС больше времени отойти. По умолчанию: 30с</text>
     </string>
     
+    <!-- Bolt Throwing Control -->
+    <string id="ui_mcm_mai_bolt_title">
+        <text>Контроль метания болтов</text>
+    </string>
+    
+    <string id="ui_mcm_mai_smart_bolt_throwing">
+        <text>Умное метание болтов</text>
+    </string>
+    <string id="ui_mcm_mai_smart_bolt_throwing_desc">
+        <text>НПС бросают болты только при скоплении нескольких аномалий рядом. Предотвращает постоянное метание болтов возле одиночных аномалий. По умолчанию: Вкл.</text>
+    </string>
+    
+    <string id="ui_mcm_mai_bolt_min_anomalies">
+        <text>Мин. аномалий для болтов</text>
+    </string>
+    <string id="ui_mcm_mai_bolt_min_anomalies_desc">
+        <text>Минимальное количество аномалий поблизости для начала метания болтов. Меньше = больше метания. По умолчанию: 3</text>
+    </string>
+    
+    <string id="ui_mcm_mai_bolt_cluster_radius">
+        <text>Радиус обнаружения скопления</text>
+    </string>
+    <string id="ui_mcm_mai_bolt_cluster_radius_desc">
+        <text>Радиус (в метрах) для проверки скопления аномалий. Аномалии в этом радиусе учитываются при подсчёте. По умолчанию: 25м</text>
+    </string>
+    
     <!-- Damage Settings -->
     <string id="ui_mcm_mai_enable_armor_damage_mult">
         <text>Урон с учётом брони</text>
