@@ -895,19 +895,28 @@ local function update_npc_restrictions(npc, detection_radius)
     
     -- Find anomalies not already in restrictions
     local to_add = {}
+    local rank = ranks and ranks.get_obj_rank_name(npc) or "unknown"
+    local state = get_movement_state_name(npc)
+    
     for _, anom_name in ipairs(nearby) do
         if not sf(current_restrictions, anom_name) then
-            -- Roll for miss based on rank
+            -- Roll for detection based on rank + movement state
             local miss_chance = get_rank_miss_chance(npc)
             local state_mult = get_movement_state_multiplier(npc)
-            local final_chance = math.floor(miss_chance * state_mult)
+            local final_miss_chance = math.floor(miss_chance * state_mult)
+            if final_miss_chance > 100 then final_miss_chance = 100 end
             
-            if final_chance <= 0 or rd(1, 100) > final_chance then
-                -- NPC detects this anomaly (roll > chance means success)
+            local roll = rd(1, 100)
+            
+            if final_miss_chance <= 0 or roll > final_miss_chance then
+                -- NPC detects this anomaly - add restriction so they pathfind around it
                 ti(to_add, anom_name)
+                dbg_log("DETECT", "NPC [%s] (rank: %s, state: %s) DETECTED [%s] (roll: %d > %d%%) - adding restriction", 
+                    npc:name(), rank, state, anom_name, roll, final_miss_chance)
             else
-                dbg_log("DETECT", "NPC [%s] missed anomaly [%s] (roll <= %d%%)", 
-                    npc:name(), anom_name, final_chance)
+                -- NPC failed to notice - no restriction, they might walk into it
+                dbg_log("DETECT", "NPC [%s] (rank: %s, state: %s) MISSED [%s] (roll: %d <= %d%%) - no restriction", 
+                    npc:name(), rank, state, anom_name, roll, final_miss_chance)
             end
         end
     end
@@ -924,72 +933,56 @@ local function update_npc_restrictions(npc, detection_radius)
 end
 
 
--- ### Damage System
+-- ### NPC Before Hit Callback (Armor Damage Reduction Only)
 
-function should_npc_take_damage(npc, anomaly)
-    if not npc or not anomaly then return true end
+-- This callback fires when an NPC is about to take damage
+-- At this point the NPC already failed to notice the anomaly, so they WILL take damage
+-- We only apply armor-based damage reduction here
+local function on_npc_before_hit(npc, shit, bone_id, flags)
+    -- Only process if mod is enabled
+    if not is_mod_enabled() then return end
     
-    -- Note: Community checks (greh, monolith), companion checks, and important NPC checks
-    -- are now handled at engine level via set_enable_anomalies_damage(false)
-    -- This callback only fires for NPCs that CAN take damage
+    -- Skip if no NPC or no hit info
+    if not npc or not shit then return end
     
-    -- Always skip during surge
-    if surge_started() then
-        dbg_log("DAMAGE", "Surge active, blocking damage to [%s]", npc:name())
-        return false
-    end
+    -- Skip if NPC is dead
+    if not npc:alive() then return end
     
-    -- Check if anomaly should be skipped
-    local anom_name = anomaly:name()
-    if is_always_skip_anomaly(anom_name) then
-        return false
-    end
+    -- Only process stalkers
+    if not IsStalker(npc) then return end
     
-    -- Get rank miss chance once (used multiple times below)
-    local miss_chance = get_rank_miss_chance(npc)
+    -- Check if the damage source is an anomaly
+    local who = shit.draftsman
+    if not who then return end
     
-    -- Immunity for 0% miss chance (veterans+)
-    if get_mcm_setting("immune_zero_miss_chance", true) then
-        if miss_chance == 0 then
-            dbg_log("DAMAGE", "NPC [%s] immune (0%% miss chance), blocking damage", npc:name())
-            return false
+    -- Check if draftsman is an anomaly
+    local is_anomaly = false
+    pcall(function()
+        is_anomaly = who.is_anomaly and who:is_anomaly()
+    end)
+    
+    if not is_anomaly then return end  -- not anomaly damage, let it through
+    
+    -- Apply armor-based damage reduction if enabled
+    if get_mcm_setting("enable_armor_damage_mult", true) then
+        local mult = get_armor_damage_multiplier(npc, who)
+        if mult < 1.0 then
+            shit.power = shit.power * mult
+            dbg_verbose("ARMOR", "Applied armor multiplier %.2f to [%s], damage reduced", mult, npc:name())
         end
     end
     
-    -- Roll for damage based on rank + state
-    local state_mult = get_movement_state_multiplier(npc)
-    local damage_chance = math.floor(miss_chance * state_mult)
-    
-    -- Higher miss_chance = more likely to take damage
-    -- Novice running in combat: 100 * 3.0 = 300% (capped at 100) = always takes damage
-    -- Veteran standing: 0 * 0.3 = 0% = never takes damage
-    
-    if damage_chance > 100 then damage_chance = 100 end
-    
-    local roll = rd(1, 100)
-    local takes_damage = roll <= damage_chance
-    
-    local state = get_movement_state_name(npc)
-    local rank = ranks and ranks.get_obj_rank_name(npc) or "unknown"
-    
-    if takes_damage then
-        dbg_log("DAMAGE", "NPC [%s] (rank: %s, state: %s) HIT by [%s] (roll: %d <= %d%%)", 
-            npc:name(), rank, state, anom_name, roll, damage_chance)
-    else
-        dbg_log("DAMAGE", "NPC [%s] (rank: %s, state: %s) AVOIDED [%s] (roll: %d > %d%%)", 
-            npc:name(), rank, state, anom_name, roll, damage_chance)
-    end
-    
-    return takes_damage
+    -- Damage goes through (NPC already failed the avoidance roll)
 end
 
 
--- ### Anomaly Before Activate Callback (First Line of Defense)
+-- ### Anomaly Before Activate Callback (Damage Application)
 
 -- This callback is called by the engine BEFORE an anomaly tries to affect an object
 -- Returning false in flags.ret_value makes the anomaly completely ignore the object
--- This is more efficient than blocking damage in npc_on_before_hit because it
--- prevents the anomaly from even attempting to process the object
+-- At this point, detection already happened in update_npc_restrictions:
+--   - If NPC detected anomaly → restriction was added → they pathfind around → this callback never fires
+--   - If NPC missed anomaly → no restriction → they walked in → this callback fires → they take damage
 local function on_anomaly_before_activate(zone, obj, flags)
     -- Only process if mod is enabled
     if not is_mod_enabled() then return end
@@ -1019,18 +1012,26 @@ local function on_anomaly_before_activate(zone, obj, flags)
     -- Skip during surge (anomalies behave differently)
     if surge_started() then return end
     
-    -- Check if this NPC should be protected from anomaly damage
+    -- Check if this NPC should be fully protected from anomaly damage (greh, companions, etc)
     local should_damage, reason = should_enable_anomaly_damage(obj)
     
     if not should_damage then
-        -- Block the anomaly from affecting this NPC entirely
+        -- Block the anomaly from affecting this NPC entirely (immune)
         flags.ret_value = false
         dbg_verbose("BLOCK", "Anomaly [%s] blocked from affecting [%s] (%s)", 
             zone:name(), obj:name(), reason)
+        return
     end
     
-    -- Note: NPCs that CAN take damage will still go through should_npc_take_damage()
-    -- via the npc_on_before_hit callback for the actual damage roll
+    -- NPC is not immune and failed to detect anomaly (no restriction was added)
+    -- They walked into it - let the damage happen
+    -- Log for debugging
+    local rank = ranks and ranks.get_obj_rank_name(obj) or "unknown"
+    local state = get_movement_state_name(obj)
+    dbg_log("DAMAGE", "NPC [%s] (rank: %s, state: %s) walked into [%s] - taking damage", 
+        obj:name(), rank, state, zone:name())
+    
+    -- Damage goes through, armor reduction happens in npc_on_before_hit
 end
 
 
@@ -1453,6 +1454,9 @@ function on_game_start()
     -- Anomaly protection callback (first line of defense - blocks anomaly activation)
     RegisterScriptCallback("anomaly_on_before_activate", on_anomaly_before_activate)
     
+    -- NPC damage callback (second line of defense - damage roll for NPCs that CAN take damage)
+    RegisterScriptCallback("npc_on_before_hit", on_npc_before_hit)
+    
     -- Cache invalidation callbacks
     RegisterScriptCallback("surge_manager_end_surge", on_surge_end)
     RegisterScriptCallback("psi_storm_manager_end_storm", on_psy_storm_end)
@@ -1461,6 +1465,6 @@ function on_game_start()
     RegisterScriptCallback("actor_on_level_changed", on_level_changed)
     
     local arrival_status = is_arrival_loaded() and "detected" or "not detected"
-    dbg_log("INIT", "MAI v2.4 loaded - mod_enabled=%s, debug=%s, Arrival: %s", 
+    dbg_log("INIT", "MAI v2.5 loaded - mod_enabled=%s, debug=%s, Arrival: %s", 
         tostring(cached_mod_enabled), tostring(cached_debug_mode), arrival_status)
 end
