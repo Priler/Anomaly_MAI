@@ -1,71 +1,13 @@
 --[[
-    MAI NPC Script - Damage handling
+    MAI NPC Script - Death logging
     
     This script handles:
-    - NPC damage from anomalies (decides if damage should apply)
-    - Damage multiplier based on armor
-    - Death logging with news notifications
+    - Death logging with news notifications when NPCs die to anomalies
+    
+    Note: Damage handling is done in zz_allc0r3_mai_main.script via:
+    - anomaly_on_before_activate (detection/blocking)
+    - npc_on_before_hit (armor damage reduction)
 --]]
-
-
--- ### Local Helper Functions (safety net checks)
-
--- Direct companion check - simple and reliable like Beef's mod
-local function is_companion(npc)
-    if not npc then return false end
-    return npc:has_info("npcx_is_companion")
-end
-
--- Check for important/quest NPCs (traders, story NPCs)
-local function is_important_npc(npc)
-    if not npc then return false end
-    
-    -- Trader check
-    if IsTrader and IsTrader(npc) then
-        return true
-    end
-    
-    -- Story ID check (quest-critical NPCs)
-    if get_object_story_id and get_object_story_id(npc:id()) then
-        return true
-    end
-    
-    return false
-end
-
-
--- ### Damage Handler
-
-function mai_on_npc_before_hit(npc, shit, bone_id, flags)
-    if not npc then return end
-    
-    -- Only handle anomaly damage
-    if not IsAnomaly(shit.draftsman) then return end
-    
-    local anomaly = shit.draftsman
-    
-    -- SAFETY NET: Direct companion check (like Beef's mod)
-    -- This runs even if set_enable_anomalies_damage failed
-    if is_companion(npc) then
-        flags.ret_value = false
-        return
-    end
-    
-    -- SAFETY NET: Important NPC check
-    if is_important_npc(npc) then
-        flags.ret_value = false
-        return
-    end
-    
-    -- Check if NPC should take damage (rank/state roll, surge check, etc.)
-    if not zz_allc0r3_mai_main.should_npc_take_damage(npc, anomaly) then
-        flags.ret_value = false
-        return
-    end
-    
-    -- Apply damage multiplier based on armor
-    shit.power = shit.power * zz_allc0r3_mai_main.get_npc_dmg_mult(npc, anomaly)
-end
 
 
 -- ### Death Logging
@@ -74,9 +16,14 @@ function mai_on_npc_death(victim, killer)
     if not victim then return end
     
     -- Check if killer is anomaly
-    if not killer or not IsAnomaly(killer) then 
-        return 
-    end
+    if not killer then return end
+    
+    local is_anomaly = false
+    pcall(function()
+        is_anomaly = killer.is_anomaly and killer:is_anomaly()
+    end)
+    
+    if not is_anomaly then return end
     
     -- Check if debug is enabled
     local debug_enabled = zz_allc0r3_mai_main and 
@@ -139,6 +86,5 @@ end
 -- ### Initialization
 
 function on_game_start()
-    RegisterScriptCallback("npc_on_before_hit", mai_on_npc_before_hit)
     RegisterScriptCallback("npc_on_death_callback", mai_on_npc_death)
 end

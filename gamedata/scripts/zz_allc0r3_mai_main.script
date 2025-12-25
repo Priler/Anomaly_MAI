@@ -965,7 +965,7 @@ local function on_npc_before_hit(npc, shit, bone_id, flags)
     
     -- Apply armor-based damage reduction if enabled
     if get_mcm_setting("enable_armor_damage_mult", true) then
-        local mult = get_armor_damage_multiplier(npc, who)
+        local mult = get_npc_dmg_mult(npc, who)
         if mult < 1.0 then
             shit.power = shit.power * mult
             dbg_verbose("ARMOR", "Applied armor multiplier %.2f to [%s], damage reduced", mult, npc:name())
