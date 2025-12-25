@@ -138,11 +138,43 @@ end
 
 -- ### Anomaly Cache System
 
-local function is_always_skip_anomaly(anom_name)
+-- Pre-process ignored anomalies into hash set (exact matches) and pattern array (substring matches)
+local ignored_anomalies_hash = nil  -- exact match lookup
+local ignored_anomalies_patterns = nil  -- patterns for substring match
+
+local function init_ignored_anomalies()
+    if ignored_anomalies_hash then return end  -- already initialized
+    
+    ignored_anomalies_hash = {}
+    ignored_anomalies_patterns = {}
+    
     local t = zz_allc0r3_mai_anomalies_settings.mai_always_ignore_anom
     for i = 1, #t do
-        if anom_name == t[i] or sf(anom_name, t[i]) then return true end
+        local entry = t[i]
+        -- if entry contains underscore followed by numbers at end, it's likely exact name
+        -- otherwise treat as pattern
+        if entry:match("_%d+$") or entry:match("^[%w_]+_[%w_]+_[%w_]+_%d+$") then
+            ignored_anomalies_hash[entry] = true
+        else
+            ti(ignored_anomalies_patterns, entry)
+        end
     end
+    
+    dbg_verbose("CACHE", "Initialized ignored anomalies: %d exact, %d patterns", 
+        table.getn and table.getn(ignored_anomalies_hash) or 0, #ignored_anomalies_patterns)
+end
+
+local function is_always_skip_anomaly(anom_name)
+    init_ignored_anomalies()
+    
+    -- Fast exact match first
+    if ignored_anomalies_hash[anom_name] then return true end
+    
+    -- Slower pattern match
+    for i = 1, #ignored_anomalies_patterns do
+        if sf(anom_name, ignored_anomalies_patterns[i]) then return true end
+    end
+    
     return false
 end
 
@@ -514,12 +546,12 @@ local RANK_MCM_KEYS = {
 }
 
 local RANK_DEFAULTS = {
-    ["novice"] = 100,
+    ["novice"] = 90,
     ["trainee"] = 75,
     ["experienced"] = 50,
     ["professional"] = 25,
-    ["veteran"] = 0,
-    ["expert"] = 0,
+    ["veteran"] = 10,
+    ["expert"] = 5,
     ["master"] = 0,
     ["legend"] = 0
 }
@@ -540,9 +572,12 @@ end
 local function get_movement_state_multiplier(npc)
     if not npc then return 1.0 end
     
-    -- Combat check first (highest priority)
-    if npc:best_enemy() then
-        return get_mcm_setting("combat_miss_multiplier", 3.0)
+    -- Combat check first (highest priority) - wrap in pcall for safety
+    local has_enemy = false
+    pcall(function() has_enemy = npc:best_enemy() ~= nil end)
+    
+    if has_enemy then
+        return get_mcm_setting("combat_miss_multiplier", 2.5)
     end
     
     local movement = npc:movement_type()
@@ -550,9 +585,9 @@ local function get_movement_state_multiplier(npc)
     if movement == move.stand then
         return get_mcm_setting("standing_miss_multiplier", 0.3)
     elseif movement == move.walk then
-        return get_mcm_setting("walking_miss_multiplier", 0.6)
+        return get_mcm_setting("walking_miss_multiplier", 0.7)
     elseif movement == move.run then
-        return get_mcm_setting("running_miss_multiplier", 1.2)
+        return get_mcm_setting("running_miss_multiplier", 1.3)
     end
     
     return 1.0
@@ -560,7 +595,10 @@ end
 
 local function get_movement_state_name(npc)
     if not npc then return "unknown" end
-    if npc:best_enemy() then return "combat" end
+    
+    local has_enemy = false
+    pcall(function() has_enemy = npc:best_enemy() ~= nil end)
+    if has_enemy then return "combat" end
     
     local movement = npc:movement_type()
     if movement == move.stand then return "standing"
@@ -568,6 +606,21 @@ local function get_movement_state_name(npc)
     elseif movement == move.run then return "running"
     end
     return "unknown"
+end
+
+
+-- ### Utility Functions
+
+-- Rotate vector around Y axis by angle in degrees
+local function vector_rotate_y(vec, angle_deg)
+    local angle_rad = math.rad(angle_deg)
+    local cos_a = math.cos(angle_rad)
+    local sin_a = math.sin(angle_rad)
+    return vector():set(
+        vec.x * cos_a - vec.z * sin_a,
+        vec.y,
+        vec.x * sin_a + vec.z * cos_a
+    )
 end
 
 
@@ -601,8 +654,8 @@ end
 
 -- Find a safe position away from an anomaly using multiple methods
 local function find_safe_position_from_anomaly(npc, anomaly_pos)
-    local min_dist = get_mcm_setting("active_flee_min_distance", 15)
-    local max_dist = get_mcm_setting("active_flee_max_distance", 40)
+    local min_dist = get_mcm_setting("active_flee_min_distance", 5)
+    local max_dist = get_mcm_setting("active_flee_max_distance", 20)
     local npc_pos = npc:position()
     
     -- Calculate direction away from anomaly
@@ -611,7 +664,16 @@ local function find_safe_position_from_anomaly(npc, anomaly_pos)
         0,
         npc_pos.z - anomaly_pos.z
     )
-    away_dir:normalize()
+    
+    -- Check for zero-length vector (NPC exactly at anomaly position)
+    local dir_len = away_dir:magnitude()
+    if dir_len < 0.01 then
+        -- Pick random direction if at exact same position
+        local random_angle = math.random() * 2 * math.pi
+        away_dir:set(math.cos(random_angle), 0, math.sin(random_angle))
+    else
+        away_dir:normalize()
+    end
     
     -- Method 1: Use vanilla find_close_cover (treats anomaly as "enemy" to hide from)
     if utils_obj and utils_obj.find_close_cover then
@@ -756,13 +818,14 @@ local function check_npc_stuck(npc, current_pos, nearby_anomalies)
     
     -- Check if NPC is very close to any nearby anomaly (urgent situation)
     local is_close_to_anomaly = false
+    local stuck_dist = get_mcm_setting("stuck_detection_distance", 5)
     if nearby_anomalies and #nearby_anomalies > 0 then
         for _, anom_name in ipairs(nearby_anomalies) do
             -- Find this anomaly in cache to get its position
             for _, cached_anom in ipairs(anomaly_cache) do
                 if cached_anom.name == anom_name then
                     local dist = cached_anom.pos:distance_to(current_pos)
-                    if dist < 8 then  -- within 8 meters
+                    if dist < stuck_dist then
                         is_close_to_anomaly = true
                         break
                     end
@@ -902,6 +965,7 @@ local function update_npc_restrictions(npc, detection_radius)
     local to_add = {}
     local rank = ranks and ranks.get_obj_rank_name(npc) or "unknown"
     local state = get_movement_state_name(npc)
+    local immune_zero = get_mcm_setting("immune_zero_miss_chance", true)
     
     for _, anom_name in ipairs(nearby) do
         if not sf(current_restrictions, anom_name) then
@@ -910,18 +974,27 @@ local function update_npc_restrictions(npc, detection_radius)
             local state_mult = get_movement_state_multiplier(npc)
             local final_miss_chance = math.floor(miss_chance * state_mult)
             if final_miss_chance > 100 then final_miss_chance = 100 end
+            if final_miss_chance < 0 then final_miss_chance = 0 end
             
-            local roll = rd(1, 100)
-            
-            if final_miss_chance <= 0 or roll > final_miss_chance then
-                -- NPC detects this anomaly - add restriction so they pathfind around it
+            -- Check if NPC is immune due to 0% miss chance setting
+            if immune_zero and final_miss_chance <= 0 then
+                -- NPC is immune - always add restriction (they always detect)
                 ti(to_add, anom_name)
-                dbg_log("DETECT", "NPC [%s] (rank: %s, state: %s) DETECTED [%s] (roll: %d > %d%%) - adding restriction", 
-                    npc:name(), rank, state, anom_name, roll, final_miss_chance)
+                dbg_log("DETECT", "NPC [%s] (rank: %s, state: %s) IMMUNE to [%s] (0%% miss) - adding restriction", 
+                    npc:name(), rank, state, anom_name)
             else
-                -- NPC failed to notice - no restriction, they might walk into it
-                dbg_log("DETECT", "NPC [%s] (rank: %s, state: %s) MISSED [%s] (roll: %d <= %d%%) - no restriction", 
-                    npc:name(), rank, state, anom_name, roll, final_miss_chance)
+                local roll = rd(1, 100)
+            
+                if roll > final_miss_chance then
+                    -- NPC detects this anomaly - add restriction so they pathfind around it
+                    ti(to_add, anom_name)
+                    dbg_log("DETECT", "NPC [%s] (rank: %s, state: %s) DETECTED [%s] (roll: %d > %d%%) - adding restriction", 
+                        npc:name(), rank, state, anom_name, roll, final_miss_chance)
+                else
+                    -- NPC failed to notice - no restriction, they might walk into it
+                    dbg_log("DETECT", "NPC [%s] (rank: %s, state: %s) MISSED [%s] (roll: %d <= %d%%) - no restriction", 
+                        npc:name(), rank, state, anom_name, roll, final_miss_chance)
+                end
             end
         end
     end
@@ -1190,10 +1263,25 @@ end
 
 local function cleanup_old_map_markers()
     local count = 0
-    for i = 1, 65534 do
-        if level.map_has_object_spot(i, "anomaly_disabled") ~= 0 then
-            level.map_remove_object_spot(i, "anomaly_disabled")
-            count = count + 1
+    
+    -- First try to clean up only cached anomaly IDs (fast path)
+    if cache_valid and #anomaly_cache > 0 then
+        for _, anom in ipairs(anomaly_cache) do
+            if level.map_has_object_spot(anom.id, "anomaly_disabled") ~= 0 then
+                level.map_remove_object_spot(anom.id, "anomaly_disabled")
+                count = count + 1
+            end
+        end
+    end
+    
+    -- If no cache or user explicitly requested full cleanup, do full scan
+    -- Limited to 10000 to avoid freezing (most games won't have more)
+    if count == 0 then
+        for i = 1, 10000 do
+            if level.map_has_object_spot(i, "anomaly_disabled") ~= 0 then
+                level.map_remove_object_spot(i, "anomaly_disabled")
+                count = count + 1
+            end
         end
     end
     
@@ -1254,10 +1342,22 @@ end
 -- Hide all debug anomaly markers
 function hide_debug_anomaly_markers()
     local count = 0
-    for i = 1, 65534 do
-        if level.map_has_object_spot(i, "anomaly_disabled") ~= 0 then
-            level.map_remove_object_spot(i, "anomaly_disabled")
-            count = count + 1
+    
+    -- Use cached anomaly IDs if available (fast path)
+    if cache_valid and #anomaly_cache > 0 then
+        for _, anom in ipairs(anomaly_cache) do
+            if level.map_has_object_spot(anom.id, "anomaly_disabled") ~= 0 then
+                level.map_remove_object_spot(anom.id, "anomaly_disabled")
+                count = count + 1
+            end
+        end
+    else
+        -- Fallback: scan limited range
+        for i = 1, 10000 do
+            if level.map_has_object_spot(i, "anomaly_disabled") ~= 0 then
+                level.map_remove_object_spot(i, "anomaly_disabled")
+                count = count + 1
+            end
         end
     end
     

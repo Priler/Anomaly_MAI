@@ -26,9 +26,10 @@ local defaults = {
     
     -- Experimental: Active flee system
     active_flee_enabled = true,            -- When stuck, actively flee from anomalies instead of just clearing restrictions
-    active_flee_min_distance = 15,         -- Minimum distance to flee from anomaly
-    active_flee_max_distance = 40,         -- Maximum search distance for safe position
+    active_flee_min_distance = 5,          -- Minimum distance to flee from anomaly
+    active_flee_max_distance = 20,         -- Maximum search distance for safe position
     active_flee_cooldown = 30,             -- Seconds before NPC can get restrictions again after fleeing
+    stuck_detection_distance = 5,          -- Distance to anomaly to consider NPC "close" for urgent stuck detection
     
     -- Bolt throwing control
     smart_bolt_throwing = true,            -- Only throw bolts when multiple anomalies are nearby
@@ -229,6 +230,16 @@ function on_mcm_load()
                 step = 5,
                 def = 30,
                 hint = "mai_active_flee_cooldown",
+            },
+            {
+                id = "stuck_detection_distance",
+                type = "track",
+                val = 2,
+                min = 0,
+                max = 20,
+                step = 1,
+                def = 5,
+                hint = "mai_stuck_detection_distance",
             },
             
             -- Bolt Throwing Control

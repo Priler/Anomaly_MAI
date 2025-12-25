@@ -133,6 +133,13 @@
         <text>Seconds before NPC can receive new anomaly restrictions after fleeing. Higher values give NPCs more time to move away. Default: 30s</text>
     </string>
     
+    <string id="ui_mcm_mai_stuck_detection_distance">
+        <text>Stuck Detection Distance</text>
+    </string>
+    <string id="ui_mcm_mai_stuck_detection_distance_desc">
+        <text>Distance (meters) to anomaly to consider NPC in urgent danger. NPCs closer than this will trigger faster stuck detection. Default: 5m</text>
+    </string>
+    
     <!-- Bolt Throwing Control -->
     <string id="ui_mcm_mai_bolt_title">
         <text>Bolt Throwing Control</text>
