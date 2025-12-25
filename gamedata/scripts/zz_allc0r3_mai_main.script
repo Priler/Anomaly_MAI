@@ -1603,12 +1603,12 @@ local function on_game_load()
     dbg_verbose("EVENT", "Enabled ai_die_in_anomaly 1")
     
     invalidate_cache()
-    npc_last_update = {}       -- Clear throttle tracking
-    npc_positions = {}         -- Clear position tracking
-    npc_stuck_count = {}       -- Clear stuck counters
-    npc_unstuck_until = {}     -- Clear unstuck cooldowns
-    npc_last_anomaly = {}      -- Clear anomaly damage tracking (fix memory leak)
-    anomaly_protection_cache = {}  -- Clear protection cache (fix memory leak)
+    npc_last_update = {}
+    npc_positions = {}
+    npc_stuck_count = {}
+    npc_unstuck_until = {}
+    npc_last_anomaly = {}
+    anomaly_protection_cache = {}
 end
 
 local function on_level_changed()
@@ -1618,8 +1618,7 @@ local function on_level_changed()
     npc_positions = {}
     npc_stuck_count = {}
     npc_unstuck_until = {}
-    npc_last_anomaly = {}      -- Clear anomaly damage tracking (fix memory leak)
-    -- Note: anomaly_protection_cache is kept across levels as anomaly sections are global
+    npc_last_anomaly = {}
 end
 
 -- Cleanup when NPC goes offline
@@ -1636,12 +1635,11 @@ local function on_npc_net_destroy(npc)
             end)
         end
     end
-    -- Clean up all tracking tables for this NPC
     npc_last_update[id] = nil
     npc_positions[id] = nil
     npc_stuck_count[id] = nil
     npc_unstuck_until[id] = nil
-    npc_last_anomaly[id] = nil  -- fix memory leak
+    npc_last_anomaly[id] = nil
 end
 
 -- Configure NPC when it spawns online

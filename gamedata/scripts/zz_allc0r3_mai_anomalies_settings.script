@@ -8,44 +8,42 @@
 
 mai_always_ignore_anom = {
 
-    ----------------------------------------------------------------------------
-    -- ANOMALY SECTIONS (patterns that match multiple anomalies)
-    ----------------------------------------------------------------------------
+    -- ### ANOMALY SECTIONS (patterns that match multiple anomalies)
     
-    -- Burning Fuzz
+    -- burning fuzz
     "burning_fuzz",
     
-    -- Campfires
+    -- campfires
     "campfire",
     "zone_emi",
     
-    -- Psi anomalies
+    -- psi anomalies
     "psychic",
     
-    -- Radiation zones
+    -- radiation zones
     "zone_field_radioactive",
     "zone_radioactive",
     "radioactive",
     
-    -- Flying anomalies (fireballs)
+    -- flying anomalies (fireballs)
     "fireball_",
     
-    -- Generators
+    -- generators
     "generator_torrid",
     "generator_dust",
     "generator_electra",
     "generator_dust_static",
     
-    -- Grabber (legacy anomaly)
+    -- grabber (legacy anomaly)
     "zone_hvatalka",
     
-    -- Liana
+    -- liana
     "zone_liana",
     
-    -- Monolith zones
+    -- monolith zones
     "zone_monolith",
     
-    -- Special zones
+    -- special zones
     "zone_no_gravity",
     "zone_teleport",
     "spatial",
@@ -58,11 +56,9 @@ mai_always_ignore_anom = {
     "zone_mine_sloth",
     "zone_mine_umbra",
     "agr_torrid_zone",
-    "yan_tunnel_zone_zhar",  -- Bugged anomaly without radius
+    "yan_tunnel_zone_zhar",  -- bugged anomaly without radius
     
-    ----------------------------------------------------------------------------
-    -- ANOMALIES WITHOUT RADIUS (must be ignored to prevent errors)
-    ----------------------------------------------------------------------------
+    -- ### ANOMALIES WITHOUT RADIUS (must be ignored to prevent errors)
     
     "red_zone_mine_electric_weak",
     "red_zone_mine_thermal_strong_0018",
@@ -78,11 +74,9 @@ mai_always_ignore_anom = {
     "red_zone_mine_thermal_strong_0023",
     "red_zone_mine_thermal_strong_0003",
     
-    ----------------------------------------------------------------------------
-    -- SPECIFIC ANOMALY NAMES (by location)
-    ----------------------------------------------------------------------------
+    -- ### SPECIFIC ANOMALY NAMES (by location)
     
-    -- Cordon: Field between North Checkpoint and Bridge, near the dam
+    -- Cordon: field between north checkpoint and bridge, near the dam
     "esc_zone_mine_gravitational_weak_0025",
     "esc_zone_mine_gravitational_weak_0028",
     "esc_zone_mine_gravitational_weak_0029",
@@ -91,7 +85,7 @@ mai_always_ignore_anom = {
     "esc_zone_mine_gravitational_weak_0032",
     "esc_zone_mine_gravitational_weak_0033",
     
-    -- Cordon: Locomotive area
+    -- Cordon: locomotive area
     "esc_zone_mine_gravitational_weak_0015",
     "esc_zone_mine_gravitational_weak_0016",
     "esc_zone_mine_gravitational_weak_0017",
@@ -103,7 +97,7 @@ mai_always_ignore_anom = {
     "esc_zone_mine_gravitational_weak_0023",
     "esc_zone_mine_gravitational_weak_0034",
     
-    -- Cordon: Near the village
+    -- Cordon: near the village
     "esc_zone_mine_gravitational_weak_0000",
     "esc_zone_mine_gravitational_weak_0001",
     "esc_zone_mine_gravitational_weak_0002",
@@ -123,7 +117,7 @@ mai_always_ignore_anom = {
     "esc_zone_mine_gravitational_weak_0024",
     "esc_zone_mine_gravitational_weak_0027",
     
-    -- Garbage: Vehicle graveyard - some burners
+    -- Garbage: vehicle graveyard - some burners
     "gar_zone_mine_thermal_conc_camp_15",
     "gar_zone_mine_thermal_conc_camp_16",
     "gar_zone_mine_thermal_conc_camp_17",
@@ -134,10 +128,7 @@ mai_always_ignore_anom = {
     "gar_zone_mine_thermal_conc_camp_31",
     "gar_zone_mine_thermal_conc_camp_27",
     
-    -- Garbage: Swamp - some chemical anomalies (to allow wide safe passage)
-    -- (Add specific anomaly names here if needed)
-    
-    -- Wild Territory: Tunnel with Burners (so NPCs walk straight through)
+    -- Wild Territory: tunnel with burners (so NPCs walk straight through)
     "ros_zone_mine_thermal_average_0002",
     "ros_zone_mine_thermal_average_0004",
     "ros_zone_mine_thermal_average_0006",
@@ -147,10 +138,10 @@ mai_always_ignore_anom = {
     "ros_zone_mine_thermal_average_0012",
     "ros_zone_mine_thermal_average_0013",
     
-    -- Army Warehouses: Flying anomalies
+    -- Army Warehouses: flying anomalies
     "mil_torrid_zone",
     
-    -- Army Warehouses: Thermal anomalies
+    -- Army Warehouses: thermal anomalies
     "mil_zone_mine_thermal_strong_0011",
     "mil_zone_mine_thermal_strong_0012",
     "mil_zone_mine_thermal_strong_0013",
@@ -162,8 +153,6 @@ mai_always_ignore_anom = {
     "mil_zone_mine_thermal_strong_0019",
     "mil_zone_mine_thermal_strong_0021",
     
-    -- Army Warehouses: Burner inside house at the farmstead
+    -- Army Warehouses: burner inside house at the farmstead
     "mil_zone_zharka_static_strong_0003",
-    
-    -- Need more... Will add in next update.
 }
