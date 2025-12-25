@@ -589,7 +589,7 @@ end
 
 -- Check if NPC is stuck (hasn't moved significantly)
 -- Returns: is_stuck, is_urgent (close to anomaly)
-local function check_npc_stuck(npc, current_pos)
+local function check_npc_stuck(npc, current_pos, nearby_anomalies)
     local id = npc:id()
     local last_pos = npc_positions[id]
     
@@ -609,9 +609,23 @@ local function check_npc_stuck(npc, current_pos)
         npc_stuck_count[id] = 0
     end
     
-    -- Check if NPC is very close to an anomaly (urgent situation)
-    local closest_anom, closest_dist = find_closest_anomaly(current_pos)
-    local is_close_to_anomaly = closest_anom and closest_dist < 8  -- within 8 meters
+    -- Check if NPC is very close to any nearby anomaly (urgent situation)
+    local is_close_to_anomaly = false
+    if nearby_anomalies and #nearby_anomalies > 0 then
+        for _, anom_name in ipairs(nearby_anomalies) do
+            -- Find this anomaly in cache to get its position
+            for _, cached_anom in ipairs(anomaly_cache) do
+                if cached_anom.name == anom_name then
+                    local dist = cached_anom.pos:distance_to(current_pos)
+                    if dist < 8 then  -- within 8 meters
+                        is_close_to_anomaly = true
+                        break
+                    end
+                end
+            end
+            if is_close_to_anomaly then break end
+        end
+    end
     
     -- Faster stuck detection if close to anomaly (3 checks = ~6 seconds)
     -- Normal stuck detection if far from anomaly (5 checks = ~10 seconds)
@@ -662,16 +676,16 @@ local function update_npc_restrictions(npc, detection_radius)
     end
     
     -- NPC is near anomalies - check if still in unstuck cooldown
-    if npc_unstuck_until[id] and current_time < npc_unstuck_until[id] then
-        -- Still in cooldown, don't add restrictions
-        return
-    end
+    local in_cooldown = npc_unstuck_until[id] and current_time < npc_unstuck_until[id]
     
     -- Cooldown expired, clear it
-    npc_unstuck_until[id] = nil
+    if npc_unstuck_until[id] and current_time >= npc_unstuck_until[id] then
+        npc_unstuck_until[id] = nil
+    end
     
     -- Check if NPC is stuck (faster detection if close to anomaly)
-    local is_stuck, is_urgent = check_npc_stuck(npc, npc_pos)
+    -- We check this even during cooldown in case NPC walks back toward anomaly
+    local is_stuck, is_urgent = check_npc_stuck(npc, npc_pos, nearby)
     
     if is_stuck then
         -- Check if active flee is enabled
@@ -719,6 +733,11 @@ local function update_npc_restrictions(npc, detection_radius)
         -- Set cooldown - NPC won't get new restrictions for configured time
         local cooldown_seconds = get_mcm_setting("active_flee_cooldown", 30)
         npc_unstuck_until[id] = current_time + (cooldown_seconds * 1000)
+        return
+    end
+    
+    -- Skip adding new restrictions if in cooldown (let NPC move freely)
+    if in_cooldown then
         return
     end
     
@@ -846,15 +865,7 @@ local function on_anomaly_before_activate(zone, obj, flags)
     
     -- Block anomalies from affecting dead NPCs (optional)
     if get_mcm_setting("block_anomalies_on_corpses", true) then
-        -- Check multiple death indicators for reliability
-        local is_dead = not obj:alive()
-        
-        -- Additional check: health <= 0
-        if not is_dead and obj.health then
-            is_dead = obj:health() <= 0
-        end
-        
-        if is_dead then
+        if not obj:alive() then
             flags.ret_value = false
             dbg_verbose("BLOCK", "Anomaly [%s] blocked from affecting dead NPC [%s]", 
                 zone:name(), obj:name())
