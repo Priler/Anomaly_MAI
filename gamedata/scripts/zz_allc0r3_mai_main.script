@@ -149,19 +149,21 @@ local function init_ignored_anomalies()
     ignored_anomalies_patterns = {}
     
     local t = zz_allc0r3_mai_anomalies_settings.mai_always_ignore_anom
+    local hash_count = 0
     for i = 1, #t do
         local entry = t[i]
         -- if entry contains underscore followed by numbers at end, it's likely exact name
         -- otherwise treat as pattern
         if entry:match("_%d+$") or entry:match("^[%w_]+_[%w_]+_[%w_]+_%d+$") then
             ignored_anomalies_hash[entry] = true
+            hash_count = hash_count + 1
         else
             ti(ignored_anomalies_patterns, entry)
         end
     end
     
     dbg_verbose("CACHE", "Initialized ignored anomalies: %d exact, %d patterns", 
-        table.getn and table.getn(ignored_anomalies_hash) or 0, #ignored_anomalies_patterns)
+        hash_count, #ignored_anomalies_patterns)
 end
 
 local function is_always_skip_anomaly(anom_name)
@@ -636,22 +638,6 @@ local npc_unstuck_until = {}  -- Track when NPC can receive restrictions again
 
 -- ### Active Flee System (Experimental)
 
--- Find the closest anomaly to the NPC
-local function find_closest_anomaly(npc_pos)
-    local closest = nil
-    local closest_dist = 99999
-    
-    for _, anom in ipairs(anomaly_cache) do
-        local dist = anom.pos:distance_to(npc_pos)
-        if dist < closest_dist then
-            closest_dist = dist
-            closest = anom
-        end
-    end
-    
-    return closest, closest_dist
-end
-
 -- Find a safe position away from an anomaly using multiple methods
 local function find_safe_position_from_anomaly(npc, anomaly_pos)
     local min_dist = get_mcm_setting("active_flee_min_distance", 5)
@@ -766,26 +752,20 @@ end
 
 -- ### Stuck Detection
 
+-- get anomalies near a position, returns full anomaly data for efficiency
 local function get_nearby_anomalies(npc_pos, radius)
     local result = {}
     for _, anom in ipairs(anomaly_cache) do
         local dist = anom.pos:distance_to(npc_pos)
         if dist <= radius then
-            ti(result, anom.name)
+            ti(result, { name = anom.name, pos = anom.pos, dist = dist })
         end
     end
     return result
 end
 
--- Check if NPC is actually inside anomaly using engine's feel_touch
--- More accurate than distance checks
-local function is_npc_inside_anomaly(npc)
-    local touching = get_touching_anomalies(npc)
-    return #touching > 0, touching
-end
-
 -- Check if NPC is stuck (hasn't moved significantly)
--- Returns: is_stuck, is_urgent (close to anomaly)
+-- Returns: is_stuck, is_urgent (very close to anomaly), closest_dist
 local function check_npc_stuck(npc, current_pos, nearby_anomalies)
     local id = npc:id()
     local last_pos = npc_positions[id]
@@ -793,53 +773,47 @@ local function check_npc_stuck(npc, current_pos, nearby_anomalies)
     if not last_pos then
         npc_positions[id] = current_pos
         npc_stuck_count[id] = 0
-        return false, false
+        return false, false, 999999
     end
     
     local distance_moved = last_pos:distance_to(current_pos)
     npc_positions[id] = current_pos
     
-    -- If NPC moved less than 0.5 meters, increment stuck counter
-    if distance_moved < 0.5 then
-        npc_stuck_count[id] = (npc_stuck_count[id] or 0) + 1
-    else
+    -- If NPC moved more than 0.5 meters, they're not stuck
+    if distance_moved >= 0.5 then
         npc_stuck_count[id] = 0
+        return false, false, 999999
     end
     
-    -- Check if NPC is actually touching an anomaly (urgent!) using engine
-    local is_touching, touching_list = is_npc_inside_anomaly(npc)
-    if is_touching then
-        -- NPC is physically inside an anomaly - this is always urgent!
-        if npc_stuck_count[id] >= 1 then  -- Even 1 tick stuck inside = urgent
-            dbg_verbose("STUCK", "NPC [%s] is INSIDE anomaly (feel_touch), urgent flee needed", npc:name())
-            return true, true
-        end
-    end
-    
-    -- Check if NPC is very close to any nearby anomaly (urgent situation)
-    local is_close_to_anomaly = false
+    -- NPC hasn't moved much - find closest anomaly from already-computed nearby list
     local stuck_dist = get_mcm_setting("stuck_detection_distance", 5)
-    if nearby_anomalies and #nearby_anomalies > 0 then
-        for _, anom_name in ipairs(nearby_anomalies) do
-            -- Find this anomaly in cache to get its position
-            for _, cached_anom in ipairs(anomaly_cache) do
-                if cached_anom.name == anom_name then
-                    local dist = cached_anom.pos:distance_to(current_pos)
-                    if dist < stuck_dist then
-                        is_close_to_anomaly = true
-                        break
-                    end
-                end
-            end
-            if is_close_to_anomaly then break end
+    local closest_dist = 999999
+    local closest_anom = nil
+    
+    for _, anom in ipairs(nearby_anomalies) do
+        if anom.dist < closest_dist then
+            closest_dist = anom.dist
+            closest_anom = anom
         end
     end
     
-    -- Faster stuck detection if close to anomaly (3 checks = ~6 seconds)
-    -- Normal stuck detection if far from anomaly (5 checks = ~10 seconds)
-    local stuck_threshold = is_close_to_anomaly and 3 or 5
+    -- if NPC is not close to any anomaly, they're not stuck because of anomalies
+    if closest_dist > stuck_dist then
+        npc_stuck_count[id] = 0
+        return false, false, closest_dist
+    end
     
-    return npc_stuck_count[id] >= stuck_threshold, is_close_to_anomaly
+    -- NPC is close to anomaly and not moving - increment stuck counter
+    npc_stuck_count[id] = (npc_stuck_count[id] or 0) + 1
+    
+    -- 3 checks = ~6 seconds of not moving near anomaly
+    local stuck_threshold = 3
+    local is_stuck = npc_stuck_count[id] >= stuck_threshold
+    
+    -- urgent only if VERY close (less than 2m)
+    local is_urgent = closest_dist < 2
+    
+    return is_stuck, is_urgent, closest_dist
 end
 
 -- Clear restrictions for NPC
@@ -891,24 +865,34 @@ local function update_npc_restrictions(npc, detection_radius)
         npc_unstuck_until[id] = nil
     end
     
-    -- Check if NPC is stuck (faster detection if close to anomaly)
-    -- We check this even during cooldown in case NPC walks back toward anomaly
-    local is_stuck, is_urgent = check_npc_stuck(npc, npc_pos, nearby)
+    -- Check if NPC is stuck
+    -- check_npc_stuck now returns closest_dist directly, avoiding another cache iteration
+    local is_stuck, is_urgent, closest_dist = check_npc_stuck(npc, npc_pos, nearby)
     
     if is_stuck then
         -- Check if active flee is enabled
         local active_flee_enabled = get_mcm_setting("active_flee_enabled", true)
         
+        dbg_verbose("STUCK", "NPC [%s] stuck detected, flee_enabled=%s, dist=%.1fm", 
+            npc:name(), tostring(active_flee_enabled), closest_dist)
+        
         if active_flee_enabled then
-            -- Find closest anomaly and flee from it
-            local closest_anom, closest_dist = find_closest_anomaly(npc_pos)
+            -- Find closest anomaly for flee target (need full data, not just distance)
+            local closest_anom = nil
+            for _, anom in ipairs(nearby) do
+                if anom.dist == closest_dist then
+                    closest_anom = anom
+                    break
+                end
+            end
+            
             if closest_anom then
                 if is_urgent then
-                    dbg_log("STUCK", "NPC [%s] URGENT stuck very close to [%s] (%.1fm), fleeing immediately", 
-                        npc:name(), closest_anom.name, closest_dist)
+                    dbg_log("FLEE", "NPC [%s] urgent stuck at %.1fm from [%s], fleeing", 
+                        npc:name(), closest_dist, closest_anom.name)
                 else
-                    dbg_log("STUCK", "NPC [%s] stuck near [%s] (%.1fm), attempting active flee", 
-                        npc:name(), closest_anom.name, closest_dist)
+                    dbg_log("FLEE", "NPC [%s] stuck at %.1fm from [%s], fleeing", 
+                        npc:name(), closest_dist, closest_anom.name)
                 end
                 
                 -- Clear restrictions first so NPC can move freely
@@ -916,26 +900,24 @@ local function update_npc_restrictions(npc, detection_radius)
                 
                 -- Try to flee
                 if flee_from_anomaly(npc, closest_anom.pos, closest_anom.name) then
-                    dbg_log("STUCK", "NPC [%s] active flee successful", npc:name())
+                    dbg_log("FLEE", "NPC [%s] flee successful", npc:name())
                 else
-                    dbg_log("STUCK", "NPC [%s] active flee failed, using fallback", npc:name())
+                    dbg_log("FLEE", "NPC [%s] flee failed", npc:name())
                 end
                 
                 -- Re-add restriction for the anomaly we fled from
-                -- This prevents NPC from walking right back into it
                 pcall(function()
                     npc:add_restrictions("", closest_anom.name)
                 end)
-                dbg_log("STUCK", "NPC [%s] keeping restriction for [%s] to prevent return", 
-                    npc:name(), closest_anom.name)
             else
-                -- No anomaly found, just clear restrictions
+                -- shouldn't happen but handle gracefully
                 clear_npc_restrictions(npc)
+                dbg_verbose("STUCK", "NPC [%s] stuck but couldn't find closest anomaly, cleared restrictions", npc:name())
             end
         else
-            -- Original behavior: just clear restrictions
+            -- flee disabled - just clear restrictions
             clear_npc_restrictions(npc)
-            dbg_log("STUCK", "NPC [%s] unstuck (restrictions cleared)", npc:name())
+            dbg_log("STUCK", "NPC [%s] stuck, cleared restrictions (flee disabled)", npc:name())
         end
         
         -- Set cooldown - NPC won't get new restrictions for configured time
@@ -967,7 +949,8 @@ local function update_npc_restrictions(npc, detection_radius)
     local state = get_movement_state_name(npc)
     local immune_zero = get_mcm_setting("immune_zero_miss_chance", true)
     
-    for _, anom_name in ipairs(nearby) do
+    for _, anom in ipairs(nearby) do
+        local anom_name = anom.name
         if not sf(current_restrictions, anom_name) then
             -- Roll for detection based on rank + movement state
             local miss_chance = get_rank_miss_chance(npc)
@@ -1664,29 +1647,36 @@ end
 
 -- ### Initialization
 
+-- safe callback registration (some callbacks only exist in modded exes / certain modpacks)
+local function register_callback_safe(name, func)
+    local success, err = pcall(RegisterScriptCallback, name, func)
+    if not success then
+        printf("~[MAI] callback '%s' not available in this modpack", name)
+    end
+    return success
+end
+
 function on_game_start()
     update_mcm_cache()
     
-    -- Core callbacks
+    -- Core callbacks (should exist in all versions)
     RegisterScriptCallback("actor_on_update", on_actor_update)
     RegisterScriptCallback("on_option_change", on_option_change)
     RegisterScriptCallback("npc_on_net_destroy", on_npc_net_destroy)
-    RegisterScriptCallback("npc_on_net_spawn", on_npc_net_spawn)
+    register_callback_safe("npc_on_net_spawn", on_npc_net_spawn)
     
-    -- Anomaly protection callback (first line of defense - blocks anomaly activation)
-    RegisterScriptCallback("anomaly_on_before_activate", on_anomaly_before_activate)
+    -- Anomaly protection callback (modded exes only - blocks anomaly activation)
+    register_callback_safe("anomaly_on_before_activate", on_anomaly_before_activate)
     
-    -- NPC damage callback (armor reduction)
-    RegisterScriptCallback("npc_on_before_hit", on_npc_before_hit)
+    -- NPC damage callback (modded exes only - armor reduction)
+    register_callback_safe("npc_on_before_hit", on_npc_before_hit)
     
-    -- Note: Death detection is done via update loop checking npc_last_anomaly tracking
-    
-    -- Cache invalidation callbacks
-    RegisterScriptCallback("surge_manager_end_surge", on_surge_end)
-    RegisterScriptCallback("psi_storm_manager_end_storm", on_psy_storm_end)
+    -- Cache invalidation callbacks (some may not exist in vanilla)
+    register_callback_safe("surge_manager_end_surge", on_surge_end)
+    register_callback_safe("psi_storm_manager_end_storm", on_psy_storm_end)
     RegisterScriptCallback("on_game_load", on_game_load)
     RegisterScriptCallback("actor_on_first_update", on_game_load)
-    RegisterScriptCallback("actor_on_level_changed", on_level_changed)
+    register_callback_safe("actor_on_level_changed", on_level_changed)
     
     local arrival_status = is_arrival_loaded() and "detected" or "not detected"
     dbg_log("INIT", "MAI v2.5 loaded - mod_enabled=%s, debug=%s, Arrival: %s", 

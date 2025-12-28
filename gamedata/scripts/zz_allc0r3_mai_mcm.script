@@ -208,7 +208,7 @@ function on_mcm_load()
                 min = 5,
                 max = 30,
                 step = 5,
-                def = 15,
+                def = 5,
                 hint = "mai_active_flee_min_distance",
             },
             {
@@ -218,7 +218,7 @@ function on_mcm_load()
                 min = 20,
                 max = 80,
                 step = 10,
-                def = 40,
+                def = 20,
                 hint = "mai_active_flee_max_distance",
             },
             {
@@ -446,6 +446,9 @@ end
 
 function on_game_start()
     if ui_mcm then
-        RegisterScriptCallback("on_mcm_load", on_mcm_load)
+        local success = pcall(RegisterScriptCallback, "on_mcm_load", on_mcm_load)
+        if not success then
+            printf("~[MAI MCM] on_mcm_load callback not available")
+        end
     end
 end
