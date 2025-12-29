@@ -32,12 +32,9 @@ local defaults = {
     stuck_detection_distance = 5,          -- Distance to anomaly to consider NPC "close" for urgent stuck detection
     
     -- Bolt throwing control
-    bolt_disable_all = false,              -- Completely disable NPC bolt throwing
     smart_bolt_throwing = true,            -- Only throw bolts when multiple anomalies are nearby
     bolt_min_anomalies = 3,                -- Minimum anomalies to trigger bolt throwing
     bolt_cluster_radius = 25,              -- Radius to check for anomaly cluster
-    bolt_max_throws = 0,                   -- Max bolt throws per NPC per time window (0 = unlimited)
-    bolt_limit_window = 10,                -- Time window in minutes for bolt limit
     
     -- Damage settings
     enable_armor_damage_mult = true,       -- Use outfit-based damage multipliers
@@ -211,7 +208,7 @@ function on_mcm_load()
                 min = 5,
                 max = 30,
                 step = 5,
-                def = 5,
+                def = 15,
                 hint = "mai_active_flee_min_distance",
             },
             {
@@ -221,7 +218,7 @@ function on_mcm_load()
                 min = 20,
                 max = 80,
                 step = 10,
-                def = 20,
+                def = 40,
                 hint = "mai_active_flee_max_distance",
             },
             {
@@ -252,13 +249,6 @@ function on_mcm_load()
                 text = "ui_mcm_mai_bolt_title"
             },
             {
-                id = "bolt_disable_all",
-                type = "check",
-                val = 1,
-                def = false,
-                hint = "mai_bolt_disable_all",
-            },
-            {
                 id = "smart_bolt_throwing",
                 type = "check",
                 val = 1,
@@ -284,26 +274,6 @@ function on_mcm_load()
                 step = 5,
                 def = 25,
                 hint = "mai_bolt_cluster_radius",
-            },
-            {
-                id = "bolt_max_throws",
-                type = "track",
-                val = 2,
-                min = 0,
-                max = 20,
-                step = 1,
-                def = 0,
-                hint = "mai_bolt_max_throws",
-            },
-            {
-                id = "bolt_limit_window",
-                type = "track",
-                val = 2,
-                min = 1,
-                max = 30,
-                step = 1,
-                def = 10,
-                hint = "mai_bolt_limit_window",
             },
             
             -- Damage Settings
@@ -476,9 +446,6 @@ end
 
 function on_game_start()
     if ui_mcm then
-        local success = pcall(RegisterScriptCallback, "on_mcm_load", on_mcm_load)
-        if not success then
-            printf("~[MAI MCM] on_mcm_load callback not available")
-        end
+        RegisterScriptCallback("on_mcm_load", on_mcm_load)
     end
 end

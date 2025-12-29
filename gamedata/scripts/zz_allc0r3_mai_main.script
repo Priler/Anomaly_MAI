@@ -59,15 +59,6 @@ local debug_anomalies_shown = false
 local npc_last_anomaly = {}
 local ANOMALY_ATTRIBUTION_TIMEOUT = 5000  -- 5 seconds
 
--- Track bolt throws per NPC for rate limiting
--- Format: npc_bolt_throws[npc_id] = { count = N, window_start = time_global() }
-local npc_bolt_throws = {}
-
--- Track which anomalies each NPC has detected (persistence between updates)
--- Format: npc_detected_anomalies[npc_id] = { ["anom_name"] = true, ... }
--- Once an NPC detects an anomaly, they remember it until level change/net_destroy
-local npc_detected_anomalies = {}
-
 
 -- ### MCM Integration
 
@@ -158,21 +149,19 @@ local function init_ignored_anomalies()
     ignored_anomalies_patterns = {}
     
     local t = zz_allc0r3_mai_anomalies_settings.mai_always_ignore_anom
-    local hash_count = 0
     for i = 1, #t do
         local entry = t[i]
         -- if entry contains underscore followed by numbers at end, it's likely exact name
         -- otherwise treat as pattern
         if entry:match("_%d+$") or entry:match("^[%w_]+_[%w_]+_[%w_]+_%d+$") then
             ignored_anomalies_hash[entry] = true
-            hash_count = hash_count + 1
         else
             ti(ignored_anomalies_patterns, entry)
         end
     end
     
     dbg_verbose("CACHE", "Initialized ignored anomalies: %d exact, %d patterns", 
-        hash_count, #ignored_anomalies_patterns)
+        table.getn and table.getn(ignored_anomalies_hash) or 0, #ignored_anomalies_patterns)
 end
 
 local function is_always_skip_anomaly(anom_name)
@@ -195,6 +184,12 @@ local function rebuild_anomaly_cache()
     cache_level = level_name
     
     local fields = bind_anomaly_field.fields_by_names
+    if not fields then 
+        dbg_verbose("CACHE", "No anomaly fields found")
+        cache_valid = true
+        return 
+    end
+    
     local count = 0
     local skipped = 0
     local disabled = 0
@@ -204,132 +199,63 @@ local function rebuild_anomaly_cache()
     local dyn_anomalies = bind_anomaly_field.dyn_anomalies
     local dyn_anomalies_level = dyn_anomalies and dyn_anomalies[level_name]
     
-    -- Track added IDs to avoid duplicates
-    local added_ids = {}
-    
-    -- Method 1: Use fields_by_names (standard method)
-    if fields then
-        for _, v in pairs(fields) do
-            local anom_obj = v.object
-            if anom_obj then
-                local anom_id = anom_obj:id()
-                local se_obj = alife_object(anom_id)
+    for _, v in pairs(fields) do
+        local anom_obj = v.object
+        if anom_obj then
+            local anom_id = anom_obj:id()
+            local se_obj = alife_object(anom_id)
+            
+            if se_obj then
+                local anom_name = se_obj:name()
                 
-                if se_obj and not added_ids[anom_id] then
-                    local anom_name = se_obj:name()
+                -- Skip always-ignored anomalies
+                if is_always_skip_anomaly(anom_name) then
+                    skipped = skipped + 1
+                else
+                    local is_active = true
                     
-                    -- Skip always-ignored anomalies
-                    if is_always_skip_anomaly(anom_name) then
-                        skipped = skipped + 1
-                    else
-                        local is_active = true
-                        
-                        -- Check Arrival mod
-                        if arrival_loaded_now then
-                            is_active = is_arrival_anomaly_active(anom_id, level_name)
+                    -- Check Arrival mod
+                    if arrival_loaded_now then
+                        is_active = is_arrival_anomaly_active(anom_id, level_name)
+                    end
+                    
+                    -- Check dynamic anomalies state (true = enabled, false = disabled)
+                    if is_active and dyn_anomalies_level then
+                        local dyn_state = dyn_anomalies_level[anom_id]
+                        if dyn_state == false then
+                            is_active = false
+                            disabled = disabled + 1
+                            dbg_verbose("CACHE", "Skipping disabled dynamic anomaly: %s", anom_name)
                         end
-                        
-                        -- Check dynamic anomalies state (true = enabled, false = disabled)
-                        if is_active and dyn_anomalies_level then
-                            local dyn_state = dyn_anomalies_level[anom_id]
-                            if dyn_state == false then
-                                is_active = false
-                                disabled = disabled + 1
-                                dbg_verbose("CACHE", "Skipping disabled dynamic anomaly: %s", anom_name)
+                    end
+                    
+                    if is_active then
+                        -- Validate position before adding to cache
+                        local pos = anom_obj:position()
+                        if pos and pos.x and pos.y and pos.z then
+                            -- Set restrictor_type to None (3) so engine's inside_anomaly() returns false
+                            -- This prevents engine's built-in bolt throwing and escape behavior
+                            -- We handle pathfinding via add_restrictions() and damage via set_enable_anomalies_damage()
+                            if anom_obj.set_restrictor_type then
+                                anom_obj:set_restrictor_type(3)  -- 3=None, 4=In, 5=Out
                             end
-                        end
-                        
-                        if is_active then
-                            -- Validate position before adding to cache
-                            local pos = anom_obj:position()
-                            if pos and pos.x and pos.y and pos.z then
-                                -- Set restrictor_type to None (3) so engine's inside_anomaly() returns false
-                                if anom_obj.set_restrictor_type then
-                                    anom_obj:set_restrictor_type(3)
-                                end
-                                
-                                ti(anomaly_cache, {
-                                    id = anom_id,
-                                    name = anom_name,
-                                    pos = pos,
-                                    section = se_obj:section_name()
-                                })
-                                added_ids[anom_id] = true
-                                count = count + 1
-                            else
-                                dbg_verbose("CACHE", "Skipping anomaly with invalid position: %s", anom_name)
-                                skipped = skipped + 1
-                            end
+                            
+                            ti(anomaly_cache, {
+                                id = anom_id,
+                                name = anom_name,
+                                pos = pos,
+                                section = se_obj:section_name()
+                            })
+                            count = count + 1
                         else
+                            dbg_verbose("CACHE", "Skipping anomaly with invalid position: %s", anom_name)
                             skipped = skipped + 1
                         end
+                    else
+                        skipped = skipped + 1
                     end
                 end
             end
-        end
-    end
-    
-    -- Method 2: Scan alife objects directly (catches anomalies not in fields_by_names)
-    -- This handles Arrival-spawned anomalies and other edge cases
-    local sim = alife()
-    if sim then
-        local gg = game_graph()
-        local fallback_count = 0
-        
-        for i = 1, 65534 do
-            if not added_ids[i] then
-                local se_obj = sim:object(i)
-                if se_obj and se_obj.clsid and IsAnomaly then
-                    local ok, is_anom = pcall(IsAnomaly, nil, se_obj:clsid())
-                    if ok and is_anom then
-                        -- Check if on current level
-                        local obj_gvid = se_obj.m_game_vertex_id
-                        if obj_gvid then
-                            local ok2, obj_level = pcall(function()
-                                return sim:level_name(gg:vertex(obj_gvid):level_id())
-                            end)
-                            
-                            if ok2 and obj_level == level_name then
-                                local anom_name = se_obj:name()
-                                
-                                if not is_always_skip_anomaly(anom_name) then
-                                    local is_active = true
-                                    
-                                    if arrival_loaded_now then
-                                        is_active = is_arrival_anomaly_active(i, level_name)
-                                    end
-                                    
-                                    if is_active and dyn_anomalies_level then
-                                        local dyn_state = dyn_anomalies_level[i]
-                                        if dyn_state == false then
-                                            is_active = false
-                                        end
-                                    end
-                                    
-                                    if is_active then
-                                        local pos = se_obj.position
-                                        if pos and pos.x and pos.y and pos.z then
-                                            ti(anomaly_cache, {
-                                                id = i,
-                                                name = anom_name,
-                                                pos = pos,
-                                                section = se_obj:section_name()
-                                            })
-                                            added_ids[i] = true
-                                            count = count + 1
-                                            fallback_count = fallback_count + 1
-                                        end
-                                    end
-                                end
-                            end
-                        end
-                    end
-                end
-            end
-        end
-        
-        if fallback_count > 0 then
-            dbg_verbose("CACHE", "Fallback scan found %d additional anomalies", fallback_count)
         end
     end
     
@@ -569,83 +495,16 @@ local function reset_anomaly_property(npc)
     return success
 end
 
--- Check if NPC has exceeded bolt throw limit
--- Returns true if NPC should be blocked from throwing
-local function is_bolt_limit_exceeded(npc)
-    local max_throws = get_mcm_setting("bolt_max_throws", 0)
-    if max_throws <= 0 then
-        return false  -- limit disabled
-    end
-    
-    local window_minutes = get_mcm_setting("bolt_limit_window", 10)
-    local window_ms = window_minutes * 60 * 1000
-    local current_time = time_global()
-    local id = npc:id()
-    
-    local data = npc_bolt_throws[id]
-    if not data then
-        return false  -- no throws recorded yet
-    end
-    
-    -- Check if window has expired
-    if (current_time - data.window_start) > window_ms then
-        -- Window expired, reset counter
-        npc_bolt_throws[id] = nil
-        return false
-    end
-    
-    -- Check if limit exceeded
-    return data.count >= max_throws
-end
-
--- Record a bolt throw for rate limiting
-local function record_bolt_throw(npc)
-    local max_throws = get_mcm_setting("bolt_max_throws", 0)
-    if max_throws <= 0 then
-        return  -- limit disabled
-    end
-    
-    local window_minutes = get_mcm_setting("bolt_limit_window", 10)
-    local window_ms = window_minutes * 60 * 1000
-    local current_time = time_global()
-    local id = npc:id()
-    
-    local data = npc_bolt_throws[id]
-    
-    if not data or (current_time - data.window_start) > window_ms then
-        -- Start new window
-        npc_bolt_throws[id] = { count = 1, window_start = current_time }
-        dbg_verbose("BOLT", "NPC [%s] bolt throw 1/%d (new window)", npc:name(), max_throws)
-    else
-        -- Increment counter
-        data.count = data.count + 1
-        dbg_verbose("BOLT", "NPC [%s] bolt throw %d/%d", npc:name(), data.count, max_throws)
-    end
-end
-
 -- Control NPC bolt throwing behavior
 -- NPCs should only throw bolts when facing dense anomaly fields
 local function control_npc_bolt_throwing(npc)
     if not npc or not npc:alive() then return end
     if not IsStalker(npc) then return end
     
-    -- Check if bolts are completely disabled
-    if get_mcm_setting("bolt_disable_all", false) then
-        reset_anomaly_property(npc)
-        return
-    end
-    
     local use_smart_bolts = get_mcm_setting("smart_bolt_throwing", true)
     
     if not use_smart_bolts then
         return  -- default behavior - engine decides
-    end
-    
-    -- Check rate limit first
-    if is_bolt_limit_exceeded(npc) then
-        reset_anomaly_property(npc)
-        dbg_verbose("BOLT", "NPC [%s] exceeded bolt limit, suppressing", npc:name())
-        return
     end
     
     local npc_pos = npc:position()
@@ -668,9 +527,6 @@ local function control_npc_bolt_throwing(npc)
         reset_anomaly_property(npc)
         dbg_verbose("BOLT", "NPC [%s] touching %d anomalies but no cluster, suppressing bolts", 
             npc:name(), #touching)
-    else
-        -- NPC is allowed to throw - record it for rate limiting
-        record_bolt_throw(npc)
     end
 end
 
@@ -779,6 +635,22 @@ local npc_unstuck_until = {}  -- Track when NPC can receive restrictions again
 
 
 -- ### Active Flee System (Experimental)
+
+-- Find the closest anomaly to the NPC
+local function find_closest_anomaly(npc_pos)
+    local closest = nil
+    local closest_dist = 99999
+    
+    for _, anom in ipairs(anomaly_cache) do
+        local dist = anom.pos:distance_to(npc_pos)
+        if dist < closest_dist then
+            closest_dist = dist
+            closest = anom
+        end
+    end
+    
+    return closest, closest_dist
+end
 
 -- Find a safe position away from an anomaly using multiple methods
 local function find_safe_position_from_anomaly(npc, anomaly_pos)
@@ -894,20 +766,26 @@ end
 
 -- ### Stuck Detection
 
--- get anomalies near a position, returns full anomaly data for efficiency
 local function get_nearby_anomalies(npc_pos, radius)
     local result = {}
     for _, anom in ipairs(anomaly_cache) do
         local dist = anom.pos:distance_to(npc_pos)
         if dist <= radius then
-            ti(result, { name = anom.name, pos = anom.pos, dist = dist })
+            ti(result, anom.name)
         end
     end
     return result
 end
 
+-- Check if NPC is actually inside anomaly using engine's feel_touch
+-- More accurate than distance checks
+local function is_npc_inside_anomaly(npc)
+    local touching = get_touching_anomalies(npc)
+    return #touching > 0, touching
+end
+
 -- Check if NPC is stuck (hasn't moved significantly)
--- Returns: is_stuck, is_urgent (very close to anomaly), closest_dist
+-- Returns: is_stuck, is_urgent (close to anomaly)
 local function check_npc_stuck(npc, current_pos, nearby_anomalies)
     local id = npc:id()
     local last_pos = npc_positions[id]
@@ -915,47 +793,53 @@ local function check_npc_stuck(npc, current_pos, nearby_anomalies)
     if not last_pos then
         npc_positions[id] = current_pos
         npc_stuck_count[id] = 0
-        return false, false, 999999
+        return false, false
     end
     
     local distance_moved = last_pos:distance_to(current_pos)
     npc_positions[id] = current_pos
     
-    -- If NPC moved more than 0.5 meters, they're not stuck
-    if distance_moved >= 0.5 then
+    -- If NPC moved less than 0.5 meters, increment stuck counter
+    if distance_moved < 0.5 then
+        npc_stuck_count[id] = (npc_stuck_count[id] or 0) + 1
+    else
         npc_stuck_count[id] = 0
-        return false, false, 999999
     end
     
-    -- NPC hasn't moved much - find closest anomaly from already-computed nearby list
-    local stuck_dist = get_mcm_setting("stuck_detection_distance", 5)
-    local closest_dist = 999999
-    local closest_anom = nil
-    
-    for _, anom in ipairs(nearby_anomalies) do
-        if anom.dist < closest_dist then
-            closest_dist = anom.dist
-            closest_anom = anom
+    -- Check if NPC is actually touching an anomaly (urgent!) using engine
+    local is_touching, touching_list = is_npc_inside_anomaly(npc)
+    if is_touching then
+        -- NPC is physically inside an anomaly - this is always urgent!
+        if npc_stuck_count[id] >= 1 then  -- Even 1 tick stuck inside = urgent
+            dbg_verbose("STUCK", "NPC [%s] is INSIDE anomaly (feel_touch), urgent flee needed", npc:name())
+            return true, true
         end
     end
     
-    -- if NPC is not close to any anomaly, they're not stuck because of anomalies
-    if closest_dist > stuck_dist then
-        npc_stuck_count[id] = 0
-        return false, false, closest_dist
+    -- Check if NPC is very close to any nearby anomaly (urgent situation)
+    local is_close_to_anomaly = false
+    local stuck_dist = get_mcm_setting("stuck_detection_distance", 5)
+    if nearby_anomalies and #nearby_anomalies > 0 then
+        for _, anom_name in ipairs(nearby_anomalies) do
+            -- Find this anomaly in cache to get its position
+            for _, cached_anom in ipairs(anomaly_cache) do
+                if cached_anom.name == anom_name then
+                    local dist = cached_anom.pos:distance_to(current_pos)
+                    if dist < stuck_dist then
+                        is_close_to_anomaly = true
+                        break
+                    end
+                end
+            end
+            if is_close_to_anomaly then break end
+        end
     end
     
-    -- NPC is close to anomaly and not moving - increment stuck counter
-    npc_stuck_count[id] = (npc_stuck_count[id] or 0) + 1
+    -- Faster stuck detection if close to anomaly (3 checks = ~6 seconds)
+    -- Normal stuck detection if far from anomaly (5 checks = ~10 seconds)
+    local stuck_threshold = is_close_to_anomaly and 3 or 5
     
-    -- 3 checks = ~6 seconds of not moving near anomaly
-    local stuck_threshold = 3
-    local is_stuck = npc_stuck_count[id] >= stuck_threshold
-    
-    -- urgent only if VERY close (less than 2m)
-    local is_urgent = closest_dist < 2
-    
-    return is_stuck, is_urgent, closest_dist
+    return npc_stuck_count[id] >= stuck_threshold, is_close_to_anomaly
 end
 
 -- Clear restrictions for NPC
@@ -1007,66 +891,51 @@ local function update_npc_restrictions(npc, detection_radius)
         npc_unstuck_until[id] = nil
     end
     
-    -- Check if NPC is stuck
-    -- check_npc_stuck now returns closest_dist directly, avoiding another cache iteration
-    local is_stuck, is_urgent, closest_dist = check_npc_stuck(npc, npc_pos, nearby)
+    -- Check if NPC is stuck (faster detection if close to anomaly)
+    -- We check this even during cooldown in case NPC walks back toward anomaly
+    local is_stuck, is_urgent = check_npc_stuck(npc, npc_pos, nearby)
     
     if is_stuck then
         -- Check if active flee is enabled
         local active_flee_enabled = get_mcm_setting("active_flee_enabled", true)
         
-        dbg_verbose("STUCK", "NPC [%s] stuck detected, flee_enabled=%s, dist=%.1fm", 
-            npc:name(), tostring(active_flee_enabled), closest_dist)
-        
         if active_flee_enabled then
-            -- Find closest anomaly for flee target (need full data, not just distance)
-            local closest_anom = nil
-            for _, anom in ipairs(nearby) do
-                if anom.dist == closest_dist then
-                    closest_anom = anom
-                    break
-                end
-            end
-            
+            -- Find closest anomaly and flee from it
+            local closest_anom, closest_dist = find_closest_anomaly(npc_pos)
             if closest_anom then
                 if is_urgent then
-                    dbg_log("FLEE", "NPC [%s] urgent stuck at %.1fm from [%s], fleeing", 
-                        npc:name(), closest_dist, closest_anom.name)
+                    dbg_log("STUCK", "NPC [%s] URGENT stuck very close to [%s] (%.1fm), fleeing immediately", 
+                        npc:name(), closest_anom.name, closest_dist)
                 else
-                    dbg_log("FLEE", "NPC [%s] stuck at %.1fm from [%s], fleeing", 
-                        npc:name(), closest_dist, closest_anom.name)
+                    dbg_log("STUCK", "NPC [%s] stuck near [%s] (%.1fm), attempting active flee", 
+                        npc:name(), closest_anom.name, closest_dist)
                 end
                 
-                -- Only remove restriction for the anomaly we're fleeing from
-                -- This allows NPC to path through/away from it temporarily
-                -- Keep all other restrictions intact to protect from other anomalies
-                pcall(function()
-                    npc:remove_restrictions("", closest_anom.name)
-                end)
-                
-                -- Reset stuck counter (don't use clear_npc_restrictions which clears all)
-                npc_stuck_count[id] = 0
+                -- Clear restrictions first so NPC can move freely
+                clear_npc_restrictions(npc)
                 
                 -- Try to flee
                 if flee_from_anomaly(npc, closest_anom.pos, closest_anom.name) then
-                    dbg_log("FLEE", "NPC [%s] flee successful", npc:name())
+                    dbg_log("STUCK", "NPC [%s] active flee successful", npc:name())
                 else
-                    dbg_log("FLEE", "NPC [%s] flee failed", npc:name())
+                    dbg_log("STUCK", "NPC [%s] active flee failed, using fallback", npc:name())
                 end
                 
                 -- Re-add restriction for the anomaly we fled from
+                -- This prevents NPC from walking right back into it
                 pcall(function()
                     npc:add_restrictions("", closest_anom.name)
                 end)
+                dbg_log("STUCK", "NPC [%s] keeping restriction for [%s] to prevent return", 
+                    npc:name(), closest_anom.name)
             else
-                -- shouldn't happen but handle gracefully
+                -- No anomaly found, just clear restrictions
                 clear_npc_restrictions(npc)
-                dbg_verbose("STUCK", "NPC [%s] stuck but couldn't find closest anomaly, cleared restrictions", npc:name())
             end
         else
-            -- flee disabled - just clear restrictions
+            -- Original behavior: just clear restrictions
             clear_npc_restrictions(npc)
-            dbg_log("STUCK", "NPC [%s] stuck, cleared restrictions (flee disabled)", npc:name())
+            dbg_log("STUCK", "NPC [%s] unstuck (restrictions cleared)", npc:name())
         end
         
         -- Set cooldown - NPC won't get new restrictions for configured time
@@ -1098,51 +967,33 @@ local function update_npc_restrictions(npc, detection_radius)
     local state = get_movement_state_name(npc)
     local immune_zero = get_mcm_setting("immune_zero_miss_chance", true)
     
-    -- Get or create detection memory for this NPC
-    local detected = npc_detected_anomalies[id]
-    if not detected then
-        detected = {}
-        npc_detected_anomalies[id] = detected
-    end
-    
-    for _, anom in ipairs(nearby) do
-        local anom_name = anom.name
+    for _, anom_name in ipairs(nearby) do
         if not sf(current_restrictions, anom_name) then
-            -- Check if NPC already detected this anomaly before
-            -- Once detected, always keep it detected (no re-rolling)
-            if detected[anom_name] then
-                -- NPC already detected this anomaly - add restriction without rolling
+            -- Roll for detection based on rank + movement state
+            local miss_chance = get_rank_miss_chance(npc)
+            local state_mult = get_movement_state_multiplier(npc)
+            local final_miss_chance = math.floor(miss_chance * state_mult)
+            if final_miss_chance > 100 then final_miss_chance = 100 end
+            if final_miss_chance < 0 then final_miss_chance = 0 end
+            
+            -- Check if NPC is immune due to 0% miss chance setting
+            if immune_zero and final_miss_chance <= 0 then
+                -- NPC is immune - always add restriction (they always detect)
                 ti(to_add, anom_name)
-                dbg_verbose("DETECT", "NPC [%s] REMEMBERED [%s] - restoring restriction", npc:name(), anom_name)
+                dbg_log("DETECT", "NPC [%s] (rank: %s, state: %s) IMMUNE to [%s] (0%% miss) - adding restriction", 
+                    npc:name(), rank, state, anom_name)
             else
-                -- First encounter - roll for detection based on rank + movement state
-                local miss_chance = get_rank_miss_chance(npc)
-                local state_mult = get_movement_state_multiplier(npc)
-                local final_miss_chance = math.floor(miss_chance * state_mult)
-                if final_miss_chance > 100 then final_miss_chance = 100 end
-                if final_miss_chance < 0 then final_miss_chance = 0 end
-                
-                -- Check if NPC is immune due to 0% miss chance setting
-                if immune_zero and final_miss_chance <= 0 then
-                    -- NPC is immune - always add restriction (they always detect)
+                local roll = rd(1, 100)
+            
+                if roll > final_miss_chance then
+                    -- NPC detects this anomaly - add restriction so they pathfind around it
                     ti(to_add, anom_name)
-                    detected[anom_name] = true  -- remember detection
-                    dbg_log("DETECT", "NPC [%s] (rank: %s, state: %s) IMMUNE to [%s] (0%% miss) - adding restriction", 
-                        npc:name(), rank, state, anom_name)
+                    dbg_log("DETECT", "NPC [%s] (rank: %s, state: %s) DETECTED [%s] (roll: %d > %d%%) - adding restriction", 
+                        npc:name(), rank, state, anom_name, roll, final_miss_chance)
                 else
-                    local roll = rd(1, 100)
-                
-                    if roll > final_miss_chance then
-                        -- NPC detects this anomaly - add restriction so they pathfind around it
-                        ti(to_add, anom_name)
-                        detected[anom_name] = true  -- remember detection
-                        dbg_log("DETECT", "NPC [%s] (rank: %s, state: %s) DETECTED [%s] (roll: %d > %d%%) - adding restriction", 
-                            npc:name(), rank, state, anom_name, roll, final_miss_chance)
-                    else
-                        -- NPC failed to notice - no restriction, they might walk into it
-                        dbg_log("DETECT", "NPC [%s] (rank: %s, state: %s) MISSED [%s] (roll: %d <= %d%%) - no restriction", 
-                            npc:name(), rank, state, anom_name, roll, final_miss_chance)
-                    end
+                    -- NPC failed to notice - no restriction, they might walk into it
+                    dbg_log("DETECT", "NPC [%s] (rank: %s, state: %s) MISSED [%s] (roll: %d <= %d%%) - no restriction", 
+                        npc:name(), rank, state, anom_name, roll, final_miss_chance)
                 end
             end
         end
@@ -1413,25 +1264,29 @@ end
 local function cleanup_old_map_markers()
     local count = 0
     
-    -- Full scan - anomaly IDs can be anywhere from 1 to 65535
-    -- This may take a moment but only runs when explicitly requested
-    for i = 1, 65535 do
-        if level.map_has_object_spot(i, "anomaly_disabled") ~= 0 then
-            level.map_remove_object_spot(i, "anomaly_disabled")
-            count = count + 1
+    -- First try to clean up only cached anomaly IDs (fast path)
+    if cache_valid and #anomaly_cache > 0 then
+        for _, anom in ipairs(anomaly_cache) do
+            if level.map_has_object_spot(anom.id, "anomaly_disabled") ~= 0 then
+                level.map_remove_object_spot(anom.id, "anomaly_disabled")
+                count = count + 1
+            end
+        end
+    end
+    
+    -- If no cache or user explicitly requested full cleanup, do full scan
+    -- Limited to 10000 to avoid freezing (most games won't have more)
+    if count == 0 then
+        for i = 1, 10000 do
+            if level.map_has_object_spot(i, "anomaly_disabled") ~= 0 then
+                level.map_remove_object_spot(i, "anomaly_disabled")
+                count = count + 1
+            end
         end
     end
     
     if count > 0 then
         dbg_log("CLEANUP", "Cleaned up %d old map markers", count)
-        -- notify player
-        if db.actor then
-            news_manager.send_tip(db.actor, string.format("MAI: Removed %d old map markers", count), nil, nil, 5000)
-        end
-    else
-        if db.actor then
-            news_manager.send_tip(db.actor, "MAI: No old map markers found", nil, nil, 3000)
-        end
     end
     
     return count
@@ -1488,7 +1343,7 @@ end
 function hide_debug_anomaly_markers()
     local count = 0
     
-    -- Use cached anomaly IDs first (fast path for current markers)
+    -- Use cached anomaly IDs if available (fast path)
     if cache_valid and #anomaly_cache > 0 then
         for _, anom in ipairs(anomaly_cache) do
             if level.map_has_object_spot(anom.id, "anomaly_disabled") ~= 0 then
@@ -1496,13 +1351,13 @@ function hide_debug_anomaly_markers()
                 count = count + 1
             end
         end
-    end
-    
-    -- Also scan full range to catch any orphaned markers from old cache
-    for i = 1, 65535 do
-        if level.map_has_object_spot(i, "anomaly_disabled") ~= 0 then
-            level.map_remove_object_spot(i, "anomaly_disabled")
-            count = count + 1
+    else
+        -- Fallback: scan limited range
+        for i = 1, 10000 do
+            if level.map_has_object_spot(i, "anomaly_disabled") ~= 0 then
+                level.map_remove_object_spot(i, "anomaly_disabled")
+                count = count + 1
+            end
         end
     end
     
@@ -1753,8 +1608,6 @@ local function on_game_load()
     npc_stuck_count = {}
     npc_unstuck_until = {}
     npc_last_anomaly = {}
-    npc_bolt_throws = {}
-    npc_detected_anomalies = {}
     anomaly_protection_cache = {}
 end
 
@@ -1766,8 +1619,6 @@ local function on_level_changed()
     npc_stuck_count = {}
     npc_unstuck_until = {}
     npc_last_anomaly = {}
-    npc_bolt_throws = {}
-    npc_detected_anomalies = {}
 end
 
 -- Cleanup when NPC goes offline
@@ -1789,8 +1640,6 @@ local function on_npc_net_destroy(npc)
     npc_stuck_count[id] = nil
     npc_unstuck_until[id] = nil
     npc_last_anomaly[id] = nil
-    npc_bolt_throws[id] = nil
-    npc_detected_anomalies[id] = nil
 end
 
 -- Configure NPC when it spawns online
@@ -1815,36 +1664,29 @@ end
 
 -- ### Initialization
 
--- safe callback registration (some callbacks only exist in modded exes / certain modpacks)
-local function register_callback_safe(name, func)
-    local success, err = pcall(RegisterScriptCallback, name, func)
-    if not success then
-        printf("~[MAI] callback '%s' not available in this modpack", name)
-    end
-    return success
-end
-
 function on_game_start()
     update_mcm_cache()
     
-    -- Core callbacks (should exist in all versions)
+    -- Core callbacks
     RegisterScriptCallback("actor_on_update", on_actor_update)
     RegisterScriptCallback("on_option_change", on_option_change)
     RegisterScriptCallback("npc_on_net_destroy", on_npc_net_destroy)
-    register_callback_safe("npc_on_net_spawn", on_npc_net_spawn)
+    RegisterScriptCallback("npc_on_net_spawn", on_npc_net_spawn)
     
-    -- Anomaly protection callback (modded exes only - blocks anomaly activation)
-    register_callback_safe("anomaly_on_before_activate", on_anomaly_before_activate)
+    -- Anomaly protection callback (first line of defense - blocks anomaly activation)
+    RegisterScriptCallback("anomaly_on_before_activate", on_anomaly_before_activate)
     
-    -- NPC damage callback (modded exes only - armor reduction)
-    register_callback_safe("npc_on_before_hit", on_npc_before_hit)
+    -- NPC damage callback (armor reduction)
+    RegisterScriptCallback("npc_on_before_hit", on_npc_before_hit)
     
-    -- Cache invalidation callbacks (some may not exist in vanilla)
-    register_callback_safe("surge_manager_end_surge", on_surge_end)
-    register_callback_safe("psi_storm_manager_end_storm", on_psy_storm_end)
+    -- Note: Death detection is done via update loop checking npc_last_anomaly tracking
+    
+    -- Cache invalidation callbacks
+    RegisterScriptCallback("surge_manager_end_surge", on_surge_end)
+    RegisterScriptCallback("psi_storm_manager_end_storm", on_psy_storm_end)
     RegisterScriptCallback("on_game_load", on_game_load)
     RegisterScriptCallback("actor_on_first_update", on_game_load)
-    register_callback_safe("actor_on_level_changed", on_level_changed)
+    RegisterScriptCallback("actor_on_level_changed", on_level_changed)
     
     local arrival_status = is_arrival_loaded() and "detected" or "not detected"
     dbg_log("INIT", "MAI v2.5 loaded - mod_enabled=%s, debug=%s, Arrival: %s", 
