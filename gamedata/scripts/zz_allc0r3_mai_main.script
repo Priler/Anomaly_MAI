@@ -59,6 +59,10 @@ local debug_anomalies_shown = false
 local npc_last_anomaly = {}
 local ANOMALY_ATTRIBUTION_TIMEOUT = 5000  -- 5 seconds
 
+-- Track bolt throws per NPC for rate limiting
+-- Format: npc_bolt_throws[npc_id] = { count = N, window_start = time_global() }
+local npc_bolt_throws = {}
+
 
 -- ### MCM Integration
 
@@ -497,16 +501,83 @@ local function reset_anomaly_property(npc)
     return success
 end
 
+-- Check if NPC has exceeded bolt throw limit
+-- Returns true if NPC should be blocked from throwing
+local function is_bolt_limit_exceeded(npc)
+    local max_throws = get_mcm_setting("bolt_max_throws", 0)
+    if max_throws <= 0 then
+        return false  -- limit disabled
+    end
+    
+    local window_minutes = get_mcm_setting("bolt_limit_window", 10)
+    local window_ms = window_minutes * 60 * 1000
+    local current_time = time_global()
+    local id = npc:id()
+    
+    local data = npc_bolt_throws[id]
+    if not data then
+        return false  -- no throws recorded yet
+    end
+    
+    -- Check if window has expired
+    if (current_time - data.window_start) > window_ms then
+        -- Window expired, reset counter
+        npc_bolt_throws[id] = nil
+        return false
+    end
+    
+    -- Check if limit exceeded
+    return data.count >= max_throws
+end
+
+-- Record a bolt throw for rate limiting
+local function record_bolt_throw(npc)
+    local max_throws = get_mcm_setting("bolt_max_throws", 0)
+    if max_throws <= 0 then
+        return  -- limit disabled
+    end
+    
+    local window_minutes = get_mcm_setting("bolt_limit_window", 10)
+    local window_ms = window_minutes * 60 * 1000
+    local current_time = time_global()
+    local id = npc:id()
+    
+    local data = npc_bolt_throws[id]
+    
+    if not data or (current_time - data.window_start) > window_ms then
+        -- Start new window
+        npc_bolt_throws[id] = { count = 1, window_start = current_time }
+        dbg_verbose("BOLT", "NPC [%s] bolt throw 1/%d (new window)", npc:name(), max_throws)
+    else
+        -- Increment counter
+        data.count = data.count + 1
+        dbg_verbose("BOLT", "NPC [%s] bolt throw %d/%d", npc:name(), data.count, max_throws)
+    end
+end
+
 -- Control NPC bolt throwing behavior
 -- NPCs should only throw bolts when facing dense anomaly fields
 local function control_npc_bolt_throwing(npc)
     if not npc or not npc:alive() then return end
     if not IsStalker(npc) then return end
     
+    -- Check if bolts are completely disabled
+    if get_mcm_setting("bolt_disable_all", false) then
+        reset_anomaly_property(npc)
+        return
+    end
+    
     local use_smart_bolts = get_mcm_setting("smart_bolt_throwing", true)
     
     if not use_smart_bolts then
         return  -- default behavior - engine decides
+    end
+    
+    -- Check rate limit first
+    if is_bolt_limit_exceeded(npc) then
+        reset_anomaly_property(npc)
+        dbg_verbose("BOLT", "NPC [%s] exceeded bolt limit, suppressing", npc:name())
+        return
     end
     
     local npc_pos = npc:position()
@@ -529,6 +600,9 @@ local function control_npc_bolt_throwing(npc)
         reset_anomaly_property(npc)
         dbg_verbose("BOLT", "NPC [%s] touching %d anomalies but no cluster, suppressing bolts", 
             npc:name(), #touching)
+    else
+        -- NPC is allowed to throw - record it for rate limiting
+        record_bolt_throw(npc)
     end
 end
 
@@ -1247,29 +1321,25 @@ end
 local function cleanup_old_map_markers()
     local count = 0
     
-    -- First try to clean up only cached anomaly IDs (fast path)
-    if cache_valid and #anomaly_cache > 0 then
-        for _, anom in ipairs(anomaly_cache) do
-            if level.map_has_object_spot(anom.id, "anomaly_disabled") ~= 0 then
-                level.map_remove_object_spot(anom.id, "anomaly_disabled")
-                count = count + 1
-            end
-        end
-    end
-    
-    -- If no cache or user explicitly requested full cleanup, do full scan
-    -- Limited to 10000 to avoid freezing (most games won't have more)
-    if count == 0 then
-        for i = 1, 10000 do
-            if level.map_has_object_spot(i, "anomaly_disabled") ~= 0 then
-                level.map_remove_object_spot(i, "anomaly_disabled")
-                count = count + 1
-            end
+    -- Full scan - anomaly IDs can be anywhere from 1 to 65535
+    -- This may take a moment but only runs when explicitly requested
+    for i = 1, 65535 do
+        if level.map_has_object_spot(i, "anomaly_disabled") ~= 0 then
+            level.map_remove_object_spot(i, "anomaly_disabled")
+            count = count + 1
         end
     end
     
     if count > 0 then
         dbg_log("CLEANUP", "Cleaned up %d old map markers", count)
+        -- notify player
+        if db.actor then
+            news_manager.send_tip(db.actor, string.format("MAI: Removed %d old map markers", count), nil, nil, 5000)
+        end
+    else
+        if db.actor then
+            news_manager.send_tip(db.actor, "MAI: No old map markers found", nil, nil, 3000)
+        end
     end
     
     return count
@@ -1326,7 +1396,7 @@ end
 function hide_debug_anomaly_markers()
     local count = 0
     
-    -- Use cached anomaly IDs if available (fast path)
+    -- Use cached anomaly IDs first (fast path for current markers)
     if cache_valid and #anomaly_cache > 0 then
         for _, anom in ipairs(anomaly_cache) do
             if level.map_has_object_spot(anom.id, "anomaly_disabled") ~= 0 then
@@ -1334,13 +1404,13 @@ function hide_debug_anomaly_markers()
                 count = count + 1
             end
         end
-    else
-        -- Fallback: scan limited range
-        for i = 1, 10000 do
-            if level.map_has_object_spot(i, "anomaly_disabled") ~= 0 then
-                level.map_remove_object_spot(i, "anomaly_disabled")
-                count = count + 1
-            end
+    end
+    
+    -- Also scan full range to catch any orphaned markers from old cache
+    for i = 1, 65535 do
+        if level.map_has_object_spot(i, "anomaly_disabled") ~= 0 then
+            level.map_remove_object_spot(i, "anomaly_disabled")
+            count = count + 1
         end
     end
     
@@ -1591,6 +1661,7 @@ local function on_game_load()
     npc_stuck_count = {}
     npc_unstuck_until = {}
     npc_last_anomaly = {}
+    npc_bolt_throws = {}
     anomaly_protection_cache = {}
 end
 
@@ -1602,6 +1673,7 @@ local function on_level_changed()
     npc_stuck_count = {}
     npc_unstuck_until = {}
     npc_last_anomaly = {}
+    npc_bolt_throws = {}
 end
 
 -- Cleanup when NPC goes offline
@@ -1623,6 +1695,7 @@ local function on_npc_net_destroy(npc)
     npc_stuck_count[id] = nil
     npc_unstuck_until[id] = nil
     npc_last_anomaly[id] = nil
+    npc_bolt_throws[id] = nil
 end
 
 -- Configure NPC when it spawns online

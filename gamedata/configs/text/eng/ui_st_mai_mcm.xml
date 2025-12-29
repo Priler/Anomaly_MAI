@@ -145,6 +145,13 @@
         <text>Bolt Throwing Control</text>
     </string>
     
+    <string id="ui_mcm_mai_bolt_disable_all">
+        <text>Disable All Bolt Throwing</text>
+    </string>
+    <string id="ui_mcm_mai_bolt_disable_all_desc">
+        <text>Completely prevent NPCs from throwing bolts at anomalies. Overrides all other bolt settings. Default: Disabled</text>
+    </string>
+    
     <string id="ui_mcm_mai_smart_bolt_throwing">
         <text>Smart Bolt Throwing</text>
     </string>
@@ -164,6 +171,20 @@
     </string>
     <string id="ui_mcm_mai_bolt_cluster_radius_desc">
         <text>Radius (in meters) to check for anomaly clusters. Anomalies within this distance count toward the minimum. Default: 25m</text>
+    </string>
+    
+    <string id="ui_mcm_mai_bolt_max_throws">
+        <text>Max Bolt Throws</text>
+    </string>
+    <string id="ui_mcm_mai_bolt_max_throws_desc">
+        <text>Maximum number of bolt throws per NPC within the time window. Set to 0 for unlimited. Default: 0 (unlimited)</text>
+    </string>
+    
+    <string id="ui_mcm_mai_bolt_limit_window">
+        <text>Bolt Limit Window (minutes)</text>
+    </string>
+    <string id="ui_mcm_mai_bolt_limit_window_desc">
+        <text>Time window in minutes for the bolt throw limit. After this time, the counter resets. Default: 10 minutes</text>
     </string>
     
     <!-- Damage Settings -->
