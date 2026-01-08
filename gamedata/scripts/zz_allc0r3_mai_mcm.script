@@ -1,72 +1,51 @@
---[[
-    MAI MCM Options - Mod Configuration Menu integration
-
-    Configuration for the lightweight MAI system.
---]]
+-- MAI MCM Options
+-- version 2.6
 
 
--- ### Default Settings
+-- [ Defaults ]--
 
 local defaults = {
-    -- General settings
+    -- general
     mod_enabled = true,
     debug_mode = false,
     verbose_debug = false,
-    show_debug_anomalies = false,          -- Show anomalies on map for debugging
-    cleanup_map_markers = false,           -- One-time cleanup of old map markers
+    show_debug_anomalies = false,
+    cleanup_map_markers = false,
     
-    -- Detection settings
-    base_detection_radius = 30,            -- How far NPCs can detect anomalies
-    max_restrictions_length = 2048,        -- Max restriction string length
-    cache_rebuild_delay = 2.5,             -- Seconds to wait after surge before rebuilding cache (Arrival compat)
+    -- detection
+    base_detection_radius = 30,
+    cache_rebuild_delay = 2.5,
+    effect_radius = 300,
+    restrictions_ignore_radius = true,
     
-    -- Effect radius settings
-    effect_radius = 300,                   -- NPCs outside this radius are protected from damage
-    restrictions_ignore_radius = true,     -- Apply pathfinding restrictions regardless of effect radius
+    -- damage
+    enable_armor_damage_mult = true,
+    immune_zero_miss_chance = true,
+    block_anomalies_on_corpses = true,
     
-    -- Experimental: Active flee system
-    active_flee_enabled = true,            -- When stuck, actively flee from anomalies instead of just clearing restrictions
-    active_flee_min_distance = 5,          -- Minimum distance to flee from anomaly
-    active_flee_max_distance = 20,         -- Maximum search distance for safe position
-    active_flee_cooldown = 30,             -- Seconds before NPC can get restrictions again after fleeing
-    stuck_detection_distance = 5,          -- Distance to anomaly to consider NPC "close" for urgent stuck detection
+    -- movement
+    standing_miss_multiplier = 0.3,
+    walking_miss_multiplier = 0.6,
+    running_miss_multiplier = 1.2,
+    combat_miss_multiplier = 3.0,
     
-    -- Bolt throwing control
-    smart_bolt_throwing = true,            -- Only throw bolts when multiple anomalies are nearby
-    bolt_min_anomalies = 3,                -- Minimum anomalies to trigger bolt throwing
-    bolt_cluster_radius = 25,              -- Radius to check for anomaly cluster
-    
-    -- Damage settings
-    enable_armor_damage_mult = true,       -- Use outfit-based damage multipliers
-    immune_zero_miss_chance = true,        -- NPCs with 0% miss chance are immune
-    block_anomalies_on_corpses = true,     -- Block anomalies from affecting dead NPCs
-    
-    -- Movement state multipliers
-    -- Applied to base miss chance
-    -- Lower = less likely to miss, Higher = more likely to miss
-    standing_miss_multiplier = 0.3,        -- Standing still - very careful
-    walking_miss_multiplier = 0.7,         -- Walking - observing surroundings
-    running_miss_multiplier = 1.3,         -- Running - might miss some
-    combat_miss_multiplier = 2.5,          -- In combat - distracted
-    
-    -- Rank-based miss chance (percentage)
-    -- Higher = more likely to walk into anomalies / take damage
-    rank_novice_miss_chance = 90,
+    -- ranks
+    rank_novice_miss_chance = 100,
     rank_trainee_miss_chance = 75,
     rank_experienced_miss_chance = 50,
     rank_professional_miss_chance = 25,
-    rank_veteran_miss_chance = 10,
-    rank_expert_miss_chance = 5,
+    rank_veteran_miss_chance = 0,
+    rank_expert_miss_chance = 0,
     rank_master_miss_chance = 0,
     rank_legend_miss_chance = 0,
 }
 
 
--- ### MCM Helper Functions
+-- [ Helpers ]--
 
 function get_config(key)
     if ui_mcm then
-        return ui_mcm.get("mai/" .. key) or defaults[key]
+        return ui_mcm.get("mai/" .. key)
     end
     return defaults[key]
 end
@@ -76,15 +55,16 @@ function mcm_available()
 end
 
 
--- ### MCM Menu Definition
+-- [ Menu ]--
 
 function on_mcm_load()
     return {
         id = "mai",
         sh = true,
         gr = {
+            -- header
             {
-                id = "title",
+                id = "slide_mai",
                 type = "slide",
                 link = "ui_options_slider_player",
                 text = "ui_mcm_mai_title",
@@ -92,360 +72,57 @@ function on_mcm_load()
                 spacing = 20
             },
             
-            -- General Settings
-            {
-                id = "general",
-                type = "title",
-                text = "ui_mcm_mai_general_title"
-            },
-            {
-                id = "mod_enabled",
-                type = "check",
-                val = 1,
-                def = true,
-                hint = "mai_mod_enabled",
-            },
-            {
-                id = "debug_mode",
-                type = "check",
-                val = 1,
-                def = false,
-                hint = "mai_debug_mode",
-            },
-            {
-                id = "verbose_debug",
-                type = "check",
-                val = 1,
-                def = false,
-                hint = "mai_verbose_debug",
-            },
-            {
-                id = "show_debug_anomalies",
-                type = "check",
-                val = 1,
-                def = false,
-                hint = "mai_show_debug_anomalies",
-            },
-            {
-                id = "cleanup_map_markers",
-                type = "check",
-                val = 1,
-                def = false,
-                hint = "mai_cleanup_map_markers",
-            },
+            -- general
+            { id = "general_title", type = "title", text = "ui_mcm_mai_general_title" },
             
-            -- Detection Settings
-            {
-                id = "detection",
-                type = "title",
-                text = "ui_mcm_mai_detection_title"
-            },
-            {
-                id = "base_detection_radius",
-                type = "track",
-                val = 2,
-                min = 10,
-                max = 50,
-                step = 5,
-                def = 30,
-                hint = "mai_base_detection_radius",
-            },
-            {
-                id = "max_restrictions_length",
-                type = "track",
-                val = 2,
-                min = 1024,
-                max = 4096,
-                step = 256,
-                def = 2048,
-                hint = "mai_max_restrictions_length",
-            },
-            {
-                id = "cache_rebuild_delay",
-                type = "track",
-                val = 2,
-                min = 0,
-                max = 5,
-                step = 0.5,
-                def = 2.5,
-                hint = "mai_cache_rebuild_delay",
-            },
-            {
-                id = "effect_radius",
-                type = "track",
-                val = 2,
-                min = 100,
-                max = 500,
-                step = 50,
-                def = 300,
-                hint = "mai_effect_radius",
-            },
-            {
-                id = "restrictions_ignore_radius",
-                type = "check",
-                val = 1,
-                def = true,
-                hint = "mai_restrictions_ignore_radius",
-            },
+            { id = "mod_enabled",           type = "check", val = 1, def = true },
+            { id = "debug_mode",            type = "check", val = 1, def = false },
+            { id = "verbose_debug",         type = "check", val = 1, def = false },
+            { id = "show_debug_anomalies",  type = "check", val = 1, def = false },
+            { id = "cleanup_map_markers",   type = "check", val = 1, def = false },
             
-            -- Experimental Settings
-            {
-                id = "experimental",
-                type = "title",
-                text = "ui_mcm_mai_experimental_title"
-            },
-            {
-                id = "active_flee_enabled",
-                type = "check",
-                val = 1,
-                def = true,
-                hint = "mai_active_flee_enabled",
-            },
-            {
-                id = "active_flee_min_distance",
-                type = "track",
-                val = 2,
-                min = 5,
-                max = 30,
-                step = 5,
-                def = 15,
-                hint = "mai_active_flee_min_distance",
-            },
-            {
-                id = "active_flee_max_distance",
-                type = "track",
-                val = 2,
-                min = 20,
-                max = 80,
-                step = 10,
-                def = 40,
-                hint = "mai_active_flee_max_distance",
-            },
-            {
-                id = "active_flee_cooldown",
-                type = "track",
-                val = 2,
-                min = 10,
-                max = 120,
-                step = 5,
-                def = 30,
-                hint = "mai_active_flee_cooldown",
-            },
-            {
-                id = "stuck_detection_distance",
-                type = "track",
-                val = 2,
-                min = 0,
-                max = 20,
-                step = 1,
-                def = 5,
-                hint = "mai_stuck_detection_distance",
-            },
+            { id = "line_1", type = "line" },
             
-            -- Bolt Throwing Control
-            {
-                id = "bolt_control",
-                type = "title",
-                text = "ui_mcm_mai_bolt_title"
-            },
-            {
-                id = "smart_bolt_throwing",
-                type = "check",
-                val = 1,
-                def = true,
-                hint = "mai_smart_bolt_throwing",
-            },
-            {
-                id = "bolt_min_anomalies",
-                type = "track",
-                val = 2,
-                min = 2,
-                max = 10,
-                step = 1,
-                def = 3,
-                hint = "mai_bolt_min_anomalies",
-            },
-            {
-                id = "bolt_cluster_radius",
-                type = "track",
-                val = 2,
-                min = 10,
-                max = 50,
-                step = 5,
-                def = 25,
-                hint = "mai_bolt_cluster_radius",
-            },
+            -- detection
+            { id = "detection_title", type = "title", text = "ui_mcm_mai_detection_title" },
             
-            -- Damage Settings
-            {
-                id = "damage",
-                type = "title",
-                text = "ui_mcm_mai_damage_title"
-            },
-            {
-                id = "enable_armor_damage_mult",
-                type = "check",
-                val = 1,
-                def = true,
-                hint = "mai_enable_armor_damage_mult",
-            },
-            {
-                id = "immune_zero_miss_chance",
-                type = "check",
-                val = 1,
-                def = true,
-                hint = "mai_immune_zero_miss_chance",
-            },
-            {
-                id = "block_anomalies_on_corpses",
-                type = "check",
-                val = 1,
-                def = true,
-                hint = "mai_block_anomalies_on_corpses",
-            },
+            { id = "base_detection_radius", type = "track", val = 2, min = 10, max = 50, step = 5, def = 30 },
+            { id = "cache_rebuild_delay",   type = "track", val = 2, min = 0, max = 5, step = 0.5, def = 2.5 },
+            { id = "effect_radius",         type = "track", val = 2, min = 100, max = 500, step = 50, def = 300 },
+            { id = "restrictions_ignore_radius", type = "check", val = 1, def = true },
             
-            -- Movement State Settings
-            {
-                id = "movement_state",
-                type = "title",
-                text = "ui_mcm_mai_movement_title"
-            },
-            {
-                id = "standing_miss_multiplier",
-                type = "track",
-                val = 2,
-                min = 0.1,
-                max = 1.0,
-                step = 0.1,
-                def = 0.3,
-                hint = "mai_standing_miss_multiplier",
-            },
-            {
-                id = "walking_miss_multiplier",
-                type = "track",
-                val = 2,
-                min = 0.1,
-                max = 1.5,
-                step = 0.1,
-                def = 0.6,
-                hint = "mai_walking_miss_multiplier",
-            },
-            {
-                id = "running_miss_multiplier",
-                type = "track",
-                val = 2,
-                min = 0.5,
-                max = 2.0,
-                step = 0.1,
-                def = 1.2,
-                hint = "mai_running_miss_multiplier",
-            },
-            {
-                id = "combat_miss_multiplier",
-                type = "track",
-                val = 2,
-                min = 1.0,
-                max = 5.0,
-                step = 0.5,
-                def = 3.0,
-                hint = "mai_combat_miss_multiplier",
-            },
+            { id = "line_2", type = "line" },
             
-            -- Rank Settings
-            {
-                id = "rank_settings",
-                type = "title",
-                text = "ui_mcm_mai_rank_title"
-            },
-            {
-                id = "rank_novice_miss_chance",
-                type = "track",
-                val = 2,
-                min = 0,
-                max = 100,
-                step = 5,
-                def = 100,
-                hint = "mai_rank_novice_miss_chance",
-            },
-            {
-                id = "rank_trainee_miss_chance",
-                type = "track",
-                val = 2,
-                min = 0,
-                max = 100,
-                step = 5,
-                def = 75,
-                hint = "mai_rank_trainee_miss_chance",
-            },
-            {
-                id = "rank_experienced_miss_chance",
-                type = "track",
-                val = 2,
-                min = 0,
-                max = 100,
-                step = 5,
-                def = 50,
-                hint = "mai_rank_experienced_miss_chance",
-            },
-            {
-                id = "rank_professional_miss_chance",
-                type = "track",
-                val = 2,
-                min = 0,
-                max = 100,
-                step = 5,
-                def = 25,
-                hint = "mai_rank_professional_miss_chance",
-            },
-            {
-                id = "rank_veteran_miss_chance",
-                type = "track",
-                val = 2,
-                min = 0,
-                max = 100,
-                step = 5,
-                def = 0,
-                hint = "mai_rank_veteran_miss_chance",
-            },
-            {
-                id = "rank_expert_miss_chance",
-                type = "track",
-                val = 2,
-                min = 0,
-                max = 100,
-                step = 5,
-                def = 0,
-                hint = "mai_rank_expert_miss_chance",
-            },
-            {
-                id = "rank_master_miss_chance",
-                type = "track",
-                val = 2,
-                min = 0,
-                max = 100,
-                step = 5,
-                def = 0,
-                hint = "mai_rank_master_miss_chance",
-            },
-            {
-                id = "rank_legend_miss_chance",
-                type = "track",
-                val = 2,
-                min = 0,
-                max = 100,
-                step = 5,
-                def = 0,
-                hint = "mai_rank_legend_miss_chance",
-            },
+            -- damage
+            { id = "damage_title", type = "title", text = "ui_mcm_mai_damage_title" },
+            
+            { id = "enable_armor_damage_mult",   type = "check", val = 1, def = true },
+            { id = "immune_zero_miss_chance",    type = "check", val = 1, def = true },
+            { id = "block_anomalies_on_corpses", type = "check", val = 1, def = true },
+            
+            { id = "line_3", type = "line" },
+            
+            -- movement multipliers
+            { id = "movement_title", type = "title", text = "ui_mcm_mai_movement_title" },
+            
+            { id = "standing_miss_multiplier", type = "track", val = 2, min = 0.1, max = 1.0, step = 0.1, def = 0.3 },
+            { id = "walking_miss_multiplier",  type = "track", val = 2, min = 0.1, max = 1.5, step = 0.1, def = 0.6 },
+            { id = "running_miss_multiplier",  type = "track", val = 2, min = 0.5, max = 2.0, step = 0.1, def = 1.2 },
+            { id = "combat_miss_multiplier",   type = "track", val = 2, min = 1.0, max = 5.0, step = 0.5, def = 3.0 },
+            
+            { id = "line_4", type = "line" },
+            
+            -- rank miss chance
+            { id = "rank_title", type = "title", text = "ui_mcm_mai_rank_title" },
+            
+            { id = "rank_novice_miss_chance",       type = "track", val = 2, min = 0, max = 100, step = 5, def = 100 },
+            { id = "rank_trainee_miss_chance",      type = "track", val = 2, min = 0, max = 100, step = 5, def = 75 },
+            { id = "rank_experienced_miss_chance",  type = "track", val = 2, min = 0, max = 100, step = 5, def = 50 },
+            { id = "rank_professional_miss_chance", type = "track", val = 2, min = 0, max = 100, step = 5, def = 25 },
+            { id = "rank_veteran_miss_chance",      type = "track", val = 2, min = 0, max = 100, step = 5, def = 0 },
+            { id = "rank_expert_miss_chance",       type = "track", val = 2, min = 0, max = 100, step = 5, def = 0 },
+            { id = "rank_master_miss_chance",       type = "track", val = 2, min = 0, max = 100, step = 5, def = 0 },
+            { id = "rank_legend_miss_chance",       type = "track", val = 2, min = 0, max = 100, step = 5, def = 0 },
         }
     }
-end
-
-
--- ### Initialization
-
-function on_game_start()
-    if ui_mcm then
-        RegisterScriptCallback("on_mcm_load", on_mcm_load)
-    end
 end

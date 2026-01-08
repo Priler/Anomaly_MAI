@@ -1,34 +1,37 @@
 <?xml version="1.0" encoding="windows-1251"?>
 <string_table>
-    <!-- MAI MCM Strings - Version 3.0 -->
+    <!-- MAI MCM Strings v2.6 -->
+    <!-- Following MCM naming convention: ui_mcm_(root_id)_(option_id) -->
     
-    <!-- Title -->
+    <!-- Menu name (shown in MCM sidebar) -->
+    <string id="ui_mcm_menu_mai">
+        <text>MAI - Anomaly Interaction</text>
+    </string>
+    
+    <!-- Header slide text -->
     <string id="ui_mcm_mai_title">
-        <text>MAI - Mutant/Anomaly Interaction v2.4</text>
+        <text>MAI v2.6 - Mutant/Anomaly Interaction</text>
     </string>
     
     <!-- Section Titles -->
     <string id="ui_mcm_mai_general_title">
         <text>General Settings</text>
     </string>
-    
     <string id="ui_mcm_mai_detection_title">
         <text>Detection Settings</text>
     </string>
-    
     <string id="ui_mcm_mai_damage_title">
         <text>Damage Settings</text>
     </string>
-    
     <string id="ui_mcm_mai_movement_title">
         <text>Movement State Multipliers</text>
     </string>
-    
     <string id="ui_mcm_mai_rank_title">
-        <text>Rank Miss Chance (%)</text>
+        <text>Rank Base Miss Chance (%)</text>
     </string>
     
-    <!-- General Settings -->
+    <!-- ### General Settings ### -->
+    
     <string id="ui_mcm_mai_mod_enabled">
         <text>Enable MAI</text>
     </string>
@@ -40,184 +43,115 @@
         <text>Debug Mode</text>
     </string>
     <string id="ui_mcm_mai_debug_mode_desc">
-        <text>Enable debug logging to console. Shows detection, damage, and death events.</text>
+        <text>Enable debug logging to console. Shows detection rolls, damage events, and death attribution.</text>
     </string>
     
     <string id="ui_mcm_mai_verbose_debug">
         <text>Verbose Debug</text>
     </string>
     <string id="ui_mcm_mai_verbose_debug_desc">
-        <text>Enable verbose debug logging. Shows update loop, cache rebuilds, and config details. Very spammy!</text>
+        <text>Enable verbose debug logging. Shows update loop info, cache rebuilds, restriction changes. Very spammy!</text>
     </string>
     
     <string id="ui_mcm_mai_show_debug_anomalies">
         <text>Show Anomalies on Map</text>
     </string>
     <string id="ui_mcm_mai_show_debug_anomalies_desc">
-        <text>Show all detected anomalies on the PDA map as markers. Useful for debugging why NPCs get stuck. Toggle off to remove markers.</text>
+        <text>Show all cached anomalies on PDA map as markers. Useful for debugging pathfinding. Toggle off to remove markers.</text>
     </string>
     
     <string id="ui_mcm_mai_cleanup_map_markers">
-        <text>Cleanup Old Map Markers</text>
+        <text>Cleanup Old Markers</text>
     </string>
     <string id="ui_mcm_mai_cleanup_map_markers_desc">
-        <text>Remove anomaly markers left on the PDA map from previous MAI versions. Enable this, apply settings, then disable it again. One-time cleanup action.</text>
+        <text>Remove leftover anomaly markers from previous sessions. Enable, apply, then disable. One-time cleanup action.</text>
     </string>
     
-    <!-- Detection Settings -->
+    <!-- ### Detection Settings ### -->
+    
     <string id="ui_mcm_mai_base_detection_radius">
-        <text>Detection Radius</text>
+        <text>Detection Radius (m)</text>
     </string>
     <string id="ui_mcm_mai_base_detection_radius_desc">
-        <text>How far NPCs can detect anomalies (in meters). Higher values = earlier detection but more restrictions. Default: 30m</text>
-    </string>
-    
-    <string id="ui_mcm_mai_max_restrictions_length">
-        <text>Max Restrictions Buffer</text>
-    </string>
-    <string id="ui_mcm_mai_max_restrictions_length_desc">
-        <text>Maximum length of restriction string per NPC. If exceeded, new anomalies won't be added. Default: 2048</text>
+        <text>How far NPCs can detect anomalies. Higher = earlier detection but more pathfinding restrictions. Default: 30m</text>
     </string>
     
     <string id="ui_mcm_mai_cache_rebuild_delay">
-        <text>Cache Rebuild Delay</text>
+        <text>Cache Rebuild Delay (s)</text>
     </string>
     <string id="ui_mcm_mai_cache_rebuild_delay_desc">
-        <text>Seconds to wait after surge/psy-storm before rebuilding anomaly cache. Allows Arrival mod to finish respawning anomalies. Set to 0 if not using Arrival. Default: 2.5s</text>
+        <text>Delay after surge/psy-storm before rebuilding anomaly cache. Needed for Arrival mod compatibility. Default: 2.5s</text>
     </string>
     
     <string id="ui_mcm_mai_effect_radius">
-        <text>Effect Radius</text>
+        <text>Effect Radius (m)</text>
     </string>
     <string id="ui_mcm_mai_effect_radius_desc">
-        <text>NPCs outside this radius from player are protected from anomaly damage. Improves performance and prevents distant NPCs from dying. Default: 300m</text>
+        <text>NPCs beyond this distance from player are protected from anomaly damage. Prevents distant NPC deaths. Default: 300m</text>
     </string>
     
     <string id="ui_mcm_mai_restrictions_ignore_radius">
         <text>Global Pathfinding</text>
     </string>
     <string id="ui_mcm_mai_restrictions_ignore_radius_desc">
-        <text>If enabled, NPCs will try to avoid anomalies regardless of distance from player. If disabled, only NPCs within effect radius get pathfinding restrictions. Default: Enabled</text>
+        <text>If enabled, all NPCs avoid anomalies regardless of distance. If disabled, only NPCs within effect radius get restrictions.</text>
     </string>
     
-    <!-- Experimental Settings -->
-    <string id="ui_mcm_mai_experimental_title">
-        <text>Experimental Features</text>
-    </string>
+    <!-- ### Damage Settings ### -->
     
-    <string id="ui_mcm_mai_active_flee_enabled">
-        <text>Active Flee</text>
-    </string>
-    <string id="ui_mcm_mai_active_flee_enabled_desc">
-        <text>When NPC gets stuck near anomalies, actively make them run to a safe position instead of just clearing restrictions. Uses pathfinding to find cover away from the closest anomaly. Default: Enabled</text>
-    </string>
-    
-    <string id="ui_mcm_mai_active_flee_min_distance">
-        <text>Flee Min Distance</text>
-    </string>
-    <string id="ui_mcm_mai_active_flee_min_distance_desc">
-        <text>Minimum distance (in meters) to flee from the anomaly. NPC will try to get at least this far away. Default: 15m</text>
-    </string>
-    
-    <string id="ui_mcm_mai_active_flee_max_distance">
-        <text>Flee Max Distance</text>
-    </string>
-    <string id="ui_mcm_mai_active_flee_max_distance_desc">
-        <text>Maximum distance to search for a safe position. If no position found within this range, NPC will just have restrictions cleared. Default: 40m</text>
-    </string>
-    
-    <string id="ui_mcm_mai_active_flee_cooldown">
-        <text>Flee Cooldown</text>
-    </string>
-    <string id="ui_mcm_mai_active_flee_cooldown_desc">
-        <text>Seconds before NPC can receive new anomaly restrictions after fleeing. Higher values give NPCs more time to move away. Default: 30s</text>
-    </string>
-    
-    <string id="ui_mcm_mai_stuck_detection_distance">
-        <text>Stuck Detection Distance</text>
-    </string>
-    <string id="ui_mcm_mai_stuck_detection_distance_desc">
-        <text>Distance (meters) to anomaly to consider NPC in urgent danger. NPCs closer than this will trigger faster stuck detection. Default: 5m</text>
-    </string>
-    
-    <!-- Bolt Throwing Control -->
-    <string id="ui_mcm_mai_bolt_title">
-        <text>Bolt Throwing Control</text>
-    </string>
-    
-    <string id="ui_mcm_mai_smart_bolt_throwing">
-        <text>Smart Bolt Throwing</text>
-    </string>
-    <string id="ui_mcm_mai_smart_bolt_throwing_desc">
-        <text>NPCs only throw bolts when near multiple anomalies (dense anomaly field). Prevents constant bolt throwing near single anomalies. Default: Enabled</text>
-    </string>
-    
-    <string id="ui_mcm_mai_bolt_min_anomalies">
-        <text>Min Anomalies for Bolts</text>
-    </string>
-    <string id="ui_mcm_mai_bolt_min_anomalies_desc">
-        <text>Minimum number of anomalies nearby for NPC to start throwing bolts. Lower = more bolt throwing. Default: 3</text>
-    </string>
-    
-    <string id="ui_mcm_mai_bolt_cluster_radius">
-        <text>Cluster Detection Radius</text>
-    </string>
-    <string id="ui_mcm_mai_bolt_cluster_radius_desc">
-        <text>Radius (in meters) to check for anomaly clusters. Anomalies within this distance count toward the minimum. Default: 25m</text>
-    </string>
-    
-    <!-- Damage Settings -->
     <string id="ui_mcm_mai_enable_armor_damage_mult">
-        <text>Outfit-based Damage</text>
+        <text>Outfit Protection</text>
     </string>
     <string id="ui_mcm_mai_enable_armor_damage_mult_desc">
-        <text>Apply damage multipliers based on NPC's equipped outfit. Protection values are read directly from outfit configs (burn, shock, chemical, radiation, psy, strike). An exoskeleton with 0.7 shock protection takes only 30% electric anomaly damage.</text>
+        <text>Apply damage reduction based on NPC outfit. Reads protection values from outfit configs (burn, shock, chemical, etc).</text>
     </string>
     
     <string id="ui_mcm_mai_immune_zero_miss_chance">
-        <text>Immune at 0% Miss Chance</text>
+        <text>Immune at 0% Miss</text>
     </string>
     <string id="ui_mcm_mai_immune_zero_miss_chance_desc">
-        <text>NPCs with 0% miss chance (Veterans+) become completely immune to anomaly damage. Safety net for experienced stalkers. Default: Enabled</text>
+        <text>NPCs with 0% base miss chance become completely immune to anomaly damage. Safety net for veterans.</text>
     </string>
     
     <string id="ui_mcm_mai_block_anomalies_on_corpses">
-        <text>Block Anomalies on Corpses</text>
+        <text>Block on Corpses</text>
     </string>
     <string id="ui_mcm_mai_block_anomalies_on_corpses_desc">
-        <text>Prevent anomalies from activating on dead NPC bodies. Stops ragdoll physics glitches and improves performance. Default: Enabled</text>
+        <text>Prevent anomalies from activating on dead bodies. Stops ragdoll physics glitches and improves performance.</text>
     </string>
     
-    <!-- Movement State Settings -->
+    <!-- ### Movement State Multipliers ### -->
+    
     <string id="ui_mcm_mai_standing_miss_multiplier">
-        <text>Standing Multiplier</text>
+        <text>Standing</text>
     </string>
     <string id="ui_mcm_mai_standing_miss_multiplier_desc">
-        <text>Miss chance multiplier when NPC is standing still. Lower = more careful. Default: 0.3x</text>
+        <text>Miss chance multiplier when NPC is standing still. Lower = more careful observation. Default: 0.3x</text>
     </string>
     
     <string id="ui_mcm_mai_walking_miss_multiplier">
-        <text>Walking Multiplier</text>
+        <text>Walking</text>
     </string>
     <string id="ui_mcm_mai_walking_miss_multiplier_desc">
         <text>Miss chance multiplier when NPC is walking. Default: 0.6x</text>
     </string>
     
     <string id="ui_mcm_mai_running_miss_multiplier">
-        <text>Running Multiplier</text>
+        <text>Running</text>
     </string>
     <string id="ui_mcm_mai_running_miss_multiplier_desc">
         <text>Miss chance multiplier when NPC is running. Higher = more likely to miss anomalies. Default: 1.2x</text>
     </string>
     
     <string id="ui_mcm_mai_combat_miss_multiplier">
-        <text>Combat Multiplier</text>
+        <text>Combat</text>
     </string>
     <string id="ui_mcm_mai_combat_miss_multiplier_desc">
         <text>Miss chance multiplier when NPC is in combat. Distracted NPCs are much more likely to run into anomalies. Default: 3.0x</text>
     </string>
     
-    <!-- Rank Settings -->
+    <!-- ### Rank Settings ### -->
+    
     <string id="ui_mcm_mai_rank_novice_miss_chance">
         <text>Novice</text>
     </string>
