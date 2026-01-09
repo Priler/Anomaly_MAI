@@ -294,44 +294,52 @@ end
 -- [ NPC Checks ]--
 
 local function is_ignore_npc(npc)
-    if not is_valid_object(npc) then return true end
-    
     local id = npc:id()
-    local section = safe_call(npc.section, npc)
-    local profile = safe_call(npc.profile_name, npc)
+    local section = npc:section()
+    local profile = npc:profile_name()
     
-    if not zz_allc0r3_mai_npc_settings then return false end
-    local ignore_list = zz_allc0r3_mai_npc_settings.demonized_ignore_npc
-    if not ignore_list then return false end
-    
-    if section and ignore_list[section] then return true end
-    if profile and ignore_list[profile] then return true end
-    
-    local story_id = get_object_story_id and get_object_story_id(id)
-    if story_id then return true end
-    
-    local is_trader = safe_call(IsTrader, npc)
-    if is_trader then return true end
-    
+    if zz_allc0r3_mai_npc_settings.demonized_ignore_npc[section] then
+        dbg_verbose("IGNORE", "NPC [%s] ignored by section [%s]", npc:name(), section)
+        return true
+    end
+    if zz_allc0r3_mai_npc_settings.demonized_ignore_npc[profile] then
+        dbg_verbose("IGNORE", "NPC [%s] ignored by profile [%s]", npc:name(), profile)
+        return true
+    end
+    if get_object_story_id(id) then
+        dbg_verbose("IGNORE", "NPC [%s] ignored by story_id [%s]", npc:name(), get_object_story_id(id))
+        return true
+    end
+    if IsTrader(npc) then
+        dbg_verbose("IGNORE", "NPC [%s] ignored - is trader", npc:name())
+        return true
+    end
     return false
 end
 
 local function is_companion_npc(npc)
-    if not is_valid_object(npc) then return false end
-    local has_info = safe_call(npc.has_info, npc, "npcx_is_companion")
-    return has_info == true
+    -- if not is_valid_object(npc) then return false end
+    -- local has_info = safe_call(npc.has_info, npc, "npcx_is_companion")
+    -- return has_info == true
+    if not npc then return false end
+    return npc:has_info("npcx_is_companion")
 end
 
 local function is_task_target_npc(npc)
-    if not is_valid_object(npc) then return false end
+    if not npc then return false end
     
+    -- Check story ID - story NPCs are quest-critical and should be protected
     local npc_id = npc:id()
     if get_object_story_id and get_object_story_id(npc_id) then
         return true
     end
     
-    local has_escort = safe_call(npc.has_info, npc, "npcx_beh_escort_target")
-    return has_escort == true
+    -- Check if NPC has escort infoportion
+    if npc:has_info("npcx_beh_escort_target") then
+        return true
+    end
+    
+    return false
 end
 
 local function get_npc_community(npc)
@@ -942,6 +950,85 @@ local function on_actor_update()
 end
 
 
+-- [ Debug Map Markers ]--
+
+function show_debug_anomaly_markers()
+    if not db.actor then return end
+    
+    ensure_cache()
+    
+    local count = 0
+    for _, anom in ipairs(anomaly_cache) do
+        local id = anom.id
+        if level.map_has_object_spot(id, "anomaly_disabled") ~= 0 then
+            level.map_remove_object_spot(id, "anomaly_disabled")
+        end
+        local marker_text = sformat("MAI: %s\\n%s", anom.name, anom.section)
+        level.map_add_object_spot_ser(id, "anomaly_disabled", marker_text)
+        count = count + 1
+    end
+    
+    debug_anomalies_shown = true
+    dbg_log("DEBUG", "Showing %d anomaly markers on map", count)
+end
+
+function hide_debug_anomaly_markers()
+    local count = 0
+    
+    if cache_valid and #anomaly_cache > 0 then
+        for _, anom in ipairs(anomaly_cache) do
+            if level.map_has_object_spot(anom.id, "anomaly_disabled") ~= 0 then
+                level.map_remove_object_spot(anom.id, "anomaly_disabled")
+                count = count + 1
+            end
+        end
+    else
+        -- fallback scan
+        for i = 1, 100000 do
+            if level.map_has_object_spot(i, "anomaly_disabled") ~= 0 then
+                level.map_remove_object_spot(i, "anomaly_disabled")
+                count = count + 1
+            end
+        end
+    end
+    
+    debug_anomalies_shown = false
+    if count > 0 then
+        dbg_log("DEBUG", "Removed %d anomaly markers from map", count)
+    end
+end
+
+local function cleanup_old_map_markers()
+    dbg_log("CLEANUP", "Manual cleanup requested, scanning all IDs...")
+    local count = 0
+    for i = 1, 100000 do
+        if level.map_has_object_spot(i, "anomaly_disabled") ~= 0 then
+            level.map_remove_object_spot(i, "anomaly_disabled")
+            count = count + 1
+        end
+    end
+    if count > 0 then
+        dbg_log("CLEANUP", "Cleaned up %d map markers", count)
+    else
+        dbg_log("CLEANUP", "No markers found to clean up")
+    end
+    return count
+end
+
+
+-- [ Public API ]--
+
+function invalidate_anomaly_cache()
+    invalidate_cache()
+    dbg_log("CACHE", "Cache invalidated by external call")
+end
+
+function rebuild_anomaly_cache_now()
+    invalidate_cache()
+    rebuild_anomaly_cache()
+end
+
+
 -- [ Event Callbacks ]--
 
 local function schedule_cache_rebuild(reason)
@@ -1042,85 +1129,6 @@ local function on_option_change()
             hide_debug_anomaly_markers()
         end
     end
-end
-
-
--- [ Debug Map Markers ]--
-
-function show_debug_anomaly_markers()
-    if not db.actor then return end
-    
-    ensure_cache()
-    
-    local count = 0
-    for _, anom in ipairs(anomaly_cache) do
-        local id = anom.id
-        if level.map_has_object_spot(id, "anomaly_disabled") ~= 0 then
-            level.map_remove_object_spot(id, "anomaly_disabled")
-        end
-        local marker_text = sformat("MAI: %s\\n%s", anom.name, anom.section)
-        level.map_add_object_spot_ser(id, "anomaly_disabled", marker_text)
-        count = count + 1
-    end
-    
-    debug_anomalies_shown = true
-    dbg_log("DEBUG", "Showing %d anomaly markers on map", count)
-end
-
-function hide_debug_anomaly_markers()
-    local count = 0
-    
-    if cache_valid and #anomaly_cache > 0 then
-        for _, anom in ipairs(anomaly_cache) do
-            if level.map_has_object_spot(anom.id, "anomaly_disabled") ~= 0 then
-                level.map_remove_object_spot(anom.id, "anomaly_disabled")
-                count = count + 1
-            end
-        end
-    else
-        -- fallback scan
-        for i = 1, 100000 do
-            if level.map_has_object_spot(i, "anomaly_disabled") ~= 0 then
-                level.map_remove_object_spot(i, "anomaly_disabled")
-                count = count + 1
-            end
-        end
-    end
-    
-    debug_anomalies_shown = false
-    if count > 0 then
-        dbg_log("DEBUG", "Removed %d anomaly markers from map", count)
-    end
-end
-
-local function cleanup_old_map_markers()
-    dbg_log("CLEANUP", "Manual cleanup requested, scanning all IDs...")
-    local count = 0
-    for i = 1, 100000 do
-        if level.map_has_object_spot(i, "anomaly_disabled") ~= 0 then
-            level.map_remove_object_spot(i, "anomaly_disabled")
-            count = count + 1
-        end
-    end
-    if count > 0 then
-        dbg_log("CLEANUP", "Cleaned up %d map markers", count)
-    else
-        dbg_log("CLEANUP", "No markers found to clean up")
-    end
-    return count
-end
-
-
--- [ Public API ]--
-
-function invalidate_anomaly_cache()
-    invalidate_cache()
-    dbg_log("CACHE", "Cache invalidated by external call")
-end
-
-function rebuild_anomaly_cache_now()
-    invalidate_cache()
-    rebuild_anomaly_cache()
 end
 
 
