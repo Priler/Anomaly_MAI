@@ -207,5 +207,25 @@
     <string id="ui_mcm_mai_rank_legend_miss_chance_desc">
         <text>Base miss chance for Legend stalkers. Default: 0%</text>
     </string>
-    
+
+    <!-- ### Pathfinding Settings ### -->
+
+    <string id="ui_mcm_mai_pathfinding_title">
+        <text>Pathfinding Settings</text>
+    </string>
+
+    <string id="ui_mcm_mai_smart_bolt_min_count">
+        <text>Smart Bolt Threshold</text>
+    </string>
+    <string id="ui_mcm_mai_smart_bolt_min_count_desc">
+        <text>Minimum nearby anomalies before NPCs use engine bolt-throwing to probe the field. In combat, bolt-throwing is always disabled. Default: 3</text>
+    </string>
+
+    <string id="ui_mcm_mai_npc_stuck_timeout">
+        <text>Stuck Timeout (s)</text>
+    </string>
+    <string id="ui_mcm_mai_npc_stuck_timeout_desc">
+        <text>Seconds an NPC can have path restrictions continuously active before stuck recovery triggers. Clears restrictions and gives a 6s grace period to move freely. Default: 8</text>
+    </string>
+
 </string_table>

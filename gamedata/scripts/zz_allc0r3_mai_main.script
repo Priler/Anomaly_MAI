@@ -36,9 +36,11 @@ local cached_show_debug_anomalies = false
 
 local debug_anomalies_shown = false
 
-local npc_last_update = {}
-local npc_restrictions = {}
-local npc_last_anomaly = {}
+local npc_last_update     = {}
+local npc_restrictions    = {}
+local npc_last_anomaly    = {}
+local npc_restrict_start  = {}   -- id → timestamp when restrictions were first applied
+local npc_restrict_cooldown = {} -- id → timestamp until re-restriction is suppressed
 
 local ANOMALY_ATTRIBUTION_TIMEOUT = 5000
 local MAX_RESTRICTIONS_PER_NPC = 30
@@ -413,9 +415,9 @@ local function configure_npc_anomaly_interaction(npc)
     
     local should_damage, reason = should_enable_anomaly_damage(npc)
     safe_call(npc.set_enable_anomalies_damage, npc, should_damage)
-    safe_call(npc.set_enable_anomalies_pathfinding, npc, true)
-    
-    dbg_verbose("CONFIG", "NPC [%s] damage=%s (%s)", 
+    safe_call(npc.set_enable_anomalies_pathfinding, npc, false)
+
+    dbg_verbose("CONFIG", "NPC [%s] damage=%s (%s)",
         npc:name() or "?", tostring(should_damage), reason)
 end
 
@@ -558,70 +560,108 @@ end
 local function update_npc_restrictions(npc, detection_radius)
     if not should_add_restrictions(npc) then return end
     if not is_valid_stalker(npc) then return end
-    
+
     local id = npc:id()
     local current_time = time_global()
-    
+
     if npc_last_update[id] and current_time - npc_last_update[id] < 1500 then
         return
     end
     npc_last_update[id] = current_time
-    
+
+    -- Stuck cooldown: hold off re-restricting so the NPC can move freely
+    if npc_restrict_cooldown[id] then
+        if current_time < npc_restrict_cooldown[id] then
+            if npc_restrictions[id] then clear_npc_restrictions(npc) end
+            safe_call(npc.set_enable_anomalies_pathfinding, npc, false)
+            return
+        else
+            npc_restrict_cooldown[id] = nil
+        end
+    end
+
     local npc_pos = get_position_copy(npc)
     if not npc_pos then return end
-    
+
     local radius = detection_radius or get_mcm_setting("base_detection_radius", 30)
     local nearby = get_nearby_anomalies(npc_pos, radius)
-    
+
     if #nearby == 0 then
         if npc_restrictions[id] then
             clear_npc_restrictions(npc)
+            npc_restrict_start[id] = nil
         end
+        safe_call(npc.set_enable_anomalies_pathfinding, npc, false)
         return
     end
-    
+
     local miss_chance = get_rank_miss_chance(npc)
     local state_mult = get_movement_state_multiplier(npc)
     local final_miss = mfloor(miss_chance * state_mult)
     final_miss = mmax(0, mmin(100, final_miss))
-    
+
     local detected = {}
     local rank = "unknown"
     if ranks and ranks.get_obj_rank_name then
         rank = safe_call(ranks.get_obj_rank_name, npc) or "unknown"
     end
     local state = get_movement_state_name(npc)
-    
+
     for _, anom in ipairs(nearby) do
         local immune_zero = get_mcm_setting("immune_zero_miss_chance", true)
-        
+
         if immune_zero and final_miss <= 0 then
             tinsert(detected, anom.name)
         else
             local roll = mrand(1, 100)
             if roll > final_miss then
                 tinsert(detected, anom.name)
-                dbg_log("DETECT", "[%s] (%s) detected [%s] (roll %d > %d%%)", 
+                dbg_log("DETECT", "[%s] (%s) detected [%s] (roll %d > %d%%)",
                     npc:name() or "?", rank, anom.name, roll, final_miss)
             else
-                dbg_verbose("DETECT", "[%s] (%s) missed [%s] (roll %d <= %d%%)", 
+                dbg_verbose("DETECT", "[%s] (%s) missed [%s] (roll %d <= %d%%)",
                     npc:name() or "?", rank, anom.name, roll, final_miss)
             end
         end
-        
+
         if #detected >= MAX_RESTRICTIONS_PER_NPC then
             break
         end
     end
-    
+
     if #detected > 0 then
+        -- Stuck detection: if restrictions have been continuously active too long, give NPC a grace period
+        local stuck_ms = get_mcm_setting("npc_stuck_timeout", 8) * 1000
+        if npc_restrict_start[id] and (current_time - npc_restrict_start[id]) > stuck_ms then
+            clear_npc_restrictions(npc)
+            npc_restrict_start[id]    = nil
+            npc_restrict_cooldown[id] = current_time + 6000
+            dbg_log("STUCK", "[%s] stuck timeout — cleared restrictions (6s cooldown)", npc:name() or "?")
+            safe_call(npc.set_enable_anomalies_pathfinding, npc, false)
+            return
+        end
+
         clear_npc_restrictions(npc)
-        
+
         local add_str = tconcat(detected, ",")
         safe_call(npc.add_restrictions, npc, "", add_str)
         npc_restrictions[id] = detected
-        
+
+        if not npc_restrict_start[id] then
+            npc_restrict_start[id] = current_time
+        end
+
         dbg_verbose("RESTRICT", "[%s] added %d restrictions", npc:name() or "?", #detected)
+    end
+
+    -- Smart Bolts: only let the engine probe/throw bolts when not in combat and near a cluster
+    local in_combat = safe_call(npc.best_enemy, npc) ~= nil
+    local smart_bolt_threshold = get_mcm_setting("smart_bolt_min_count", 3)
+
+    if in_combat or #nearby < smart_bolt_threshold then
+        safe_call(npc.set_enable_anomalies_pathfinding, npc, false)
+    else
+        safe_call(npc.set_enable_anomalies_pathfinding, npc, true)
     end
 end
 
@@ -932,6 +972,7 @@ local function on_actor_update()
                     configure_npc_anomaly_interaction(npc)
                 else
                     safe_call(npc.set_enable_anomalies_damage, npc, false)
+                    safe_call(npc.set_enable_anomalies_pathfinding, npc, false)
                 end
                 
                 if within_radius or restrictions_ignore_radius then
@@ -1068,22 +1109,26 @@ end
 
 local function on_game_load()
     dbg_verbose("EVENT", "Game loaded")
-    
+
     safe_call(exec_console_cmd, "ai_die_in_anomaly 1")
-    
+
     invalidate_cache()
-    npc_last_update = {}
-    npc_restrictions = {}
-    npc_last_anomaly = {}
+    npc_last_update      = {}
+    npc_restrictions     = {}
+    npc_last_anomaly     = {}
+    npc_restrict_start   = {}
+    npc_restrict_cooldown = {}
     anomaly_protection_cache = {}
 end
 
 local function on_level_changed()
     dbg_verbose("EVENT", "Level changed")
     invalidate_cache()
-    npc_last_update = {}
-    npc_restrictions = {}
-    npc_last_anomaly = {}
+    npc_last_update      = {}
+    npc_restrictions     = {}
+    npc_last_anomaly     = {}
+    npc_restrict_start   = {}
+    npc_restrict_cooldown = {}
 end
 
 local function on_npc_net_destroy(npc)
@@ -1101,9 +1146,11 @@ local function on_npc_net_destroy(npc)
         return
     end
     
-    npc_last_update[id] = nil
-    npc_restrictions[id] = nil
-    npc_last_anomaly[id] = nil
+    npc_last_update[id]       = nil
+    npc_restrictions[id]      = nil
+    npc_last_anomaly[id]      = nil
+    npc_restrict_start[id]    = nil
+    npc_restrict_cooldown[id] = nil
 end
 
 local function on_npc_net_spawn(npc)

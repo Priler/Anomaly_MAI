@@ -17,6 +17,10 @@ local defaults = {
     cache_rebuild_delay = 2.5,
     effect_radius = 300,
     restrictions_ignore_radius = true,
+
+    -- pathfinding
+    smart_bolt_min_count = 3,
+    npc_stuck_timeout = 8,
     
     -- damage
     enable_armor_damage_mult = true,
@@ -92,7 +96,15 @@ function on_mcm_load()
             { id = "restrictions_ignore_radius", type = "check", val = 1, def = true },
             
             { id = "line_2", type = "line" },
-            
+
+            -- pathfinding
+            { id = "pathfinding_title", type = "title", text = "ui_mcm_mai_pathfinding_title" },
+
+            { id = "smart_bolt_min_count", type = "track", val = 2, min = 1, max = 8, step = 1, def = 3 },
+            { id = "npc_stuck_timeout",    type = "track", val = 2, min = 3, max = 20, step = 1, def = 8 },
+
+            { id = "line_2b", type = "line" },
+
             -- damage
             { id = "damage_title", type = "title", text = "ui_mcm_mai_damage_title" },
             
