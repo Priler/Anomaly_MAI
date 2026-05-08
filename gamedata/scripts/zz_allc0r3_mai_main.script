@@ -26,8 +26,7 @@ local anomaly_cache = {}
 local cache_valid = false
 local cache_level = nil
 
-local global_update_timer = 0
-local UPDATE_INTERVAL = 2000
+local UPDATE_INTERVAL_SEC = 2.0
 
 local cached_debug_mode = false
 local cached_verbose_debug = false
@@ -45,12 +44,26 @@ local npc_restrict_cooldown = {} -- id → timestamp until re-restriction is sup
 local ANOMALY_ATTRIBUTION_TIMEOUT = 5000
 local MAX_RESTRICTIONS_PER_NPC = 30
 
+local pcall_failures_seen = {}
+
 
 -- [ Safe Wrappers ]--
 
 local function safe_call(func, ...)
     local ok, result = pcall(func, ...)
     if ok then return result end
+
+    local info = debug.getinfo(2, "Sl")
+    local where = info and (info.short_src .. ":" .. info.currentline) or "unknown"
+    local key = where .. "|" .. tostring(result)
+
+    if not pcall_failures_seen[key] then
+        pcall_failures_seen[key] = 1
+        printf("[MAI][PCALL_FAIL] %s - %s (further occurrences silenced)", where, tostring(result))
+    else
+        pcall_failures_seen[key] = pcall_failures_seen[key] + 1
+    end
+
     return nil
 end
 
@@ -382,28 +395,47 @@ local function should_enable_anomaly_damage(npc)
     return true, "normal"
 end
 
+-- NPCs on these xr_logic schemes are bound to a fixed anchor and don't pathfind.
+-- Adding path restrictions just churns clear/add every tick and keeps tripping stuck recovery.
+local STATIC_POST_SCHEMES = {
+    camper      = true,  -- xr_camper: sniper/fixed firing position
+    remark      = true,  -- xr_remark: standing guard post
+    animpoint   = true,  -- xr_animpoint: sit/lean/stand at anchor
+    smartcover  = true,  -- xr_smartcover: smart cover anchor
+    sleeper     = true,  -- xr_sleeper: sleeping
+    kamp        = true,  -- xr_kamp: campfire idle
+}
+
+local function is_static_post_npc(npc)
+    if not npc then return false end
+    local st = db.storage[npc:id()]
+    if not st then return false end
+    return STATIC_POST_SCHEMES[st.active_scheme] == true
+end
+
 local function should_add_restrictions(npc)
     if not is_valid_stalker(npc) then return false end
-    
+
     local community = get_npc_community(npc)
     if not community then return true end
-    
+
     if not zz_allc0r3_mai_npc_settings then return true end
-    
+
     if zz_allc0r3_mai_npc_settings.mai_always_full_ignore_community and
        zz_allc0r3_mai_npc_settings.mai_always_full_ignore_community[community] then
         return false
     end
-    
+
     if zz_allc0r3_mai_npc_settings.mai_no_evade_community and
        zz_allc0r3_mai_npc_settings.mai_no_evade_community[community] then
         return false
     end
-    
+
     if is_ignore_npc(npc) then return false end
     if is_companion_npc(npc) then return false end
     if is_task_target_npc(npc) then return false end
-    
+    if is_static_post_npc(npc) then return false end
+
     return true
 end
 
@@ -636,7 +668,7 @@ local function update_npc_restrictions(npc, detection_radius)
             clear_npc_restrictions(npc)
             npc_restrict_start[id]    = nil
             npc_restrict_cooldown[id] = current_time + 6000
-            dbg_log("STUCK", "[%s] stuck timeout — cleared restrictions (6s cooldown)", npc:name() or "?")
+            dbg_log("STUCK", "[%s] stuck timeout - cleared restrictions (6s cooldown)", npc:name() or "?")
             safe_call(npc.set_enable_anomalies_pathfinding, npc, false)
             return
         end
@@ -935,16 +967,14 @@ end
 
 -- [ Main Update Loop ]--
 
-local function on_actor_update()
+local function mai_periodic_tick()
     if not is_mod_enabled() then return end
     if surge_started() then return end
     if not db.actor then return end
     if is_ignore_level() then return end
-    
+
     local current_time = time_global()
-    if current_time < global_update_timer then return end
-    global_update_timer = current_time + UPDATE_INTERVAL
-    
+
     check_anomaly_deaths(current_time)
     ensure_cache()
     
@@ -985,9 +1015,20 @@ local function on_actor_update()
     end
     
     if processed > 0 then
-        dbg_verbose("UPDATE", "Processed %d NPCs (cache: %d anomalies)", 
+        dbg_verbose("UPDATE", "Processed %d NPCs (cache: %d anomalies)",
             processed, #anomaly_cache)
     end
+end
+
+local function schedule_next_tick()
+    CreateTimeEvent("mai_periodic", "mai_tick", UPDATE_INTERVAL_SEC, function()
+        local ok, err = pcall(mai_periodic_tick)
+        if not ok then
+            printf("[MAI][TICK_FAIL] %s", tostring(err))
+        end
+        schedule_next_tick()
+        return true
+    end)
 end
 
 
@@ -1089,14 +1130,6 @@ local function schedule_cache_rebuild(reason)
     end)
 end
 
-local function on_surge_end()
-    schedule_cache_rebuild("Surge ended")
-end
-
-local function on_psy_storm_end()
-    schedule_cache_rebuild("Psy-storm ended")
-end
-
 local function on_actor_interaction(typ, obj, name)
     if typ ~= "anomalies" then return end
     
@@ -1119,6 +1152,12 @@ local function on_game_load()
     npc_restrict_start   = {}
     npc_restrict_cooldown = {}
     anomaly_protection_cache = {}
+    pcall_failures_seen  = {}
+
+    -- Bootstrap (or re-arm) the periodic tick. RemoveTimeEvent first so a stale chain from
+    -- a prior session/level doesn't double-fire alongside the new one.
+    RemoveTimeEvent("mai_periodic", "mai_tick")
+    schedule_next_tick()
 end
 
 local function on_level_changed()
@@ -1129,6 +1168,11 @@ local function on_level_changed()
     npc_last_anomaly     = {}
     npc_restrict_start   = {}
     npc_restrict_cooldown = {}
+    pcall_failures_seen  = {}
+
+    -- The actor_on_first_update hook will re-arm the timer on the new level via on_game_load.
+    -- Drop the existing chain so it doesn't fire against a half-loaded level.
+    RemoveTimeEvent("mai_periodic", "mai_tick")
 end
 
 local function on_npc_net_destroy(npc)
@@ -1183,16 +1227,13 @@ end
 
 function on_game_start()
     update_mcm_cache()
-    
-    RegisterScriptCallback("actor_on_update", on_actor_update)
+
     RegisterScriptCallback("on_option_change", on_option_change)
     RegisterScriptCallback("npc_on_net_destroy", on_npc_net_destroy)
     RegisterScriptCallback("npc_on_net_spawn", on_npc_net_spawn)
     RegisterScriptCallback("anomaly_on_before_activate", on_anomaly_before_activate)
     RegisterScriptCallback("npc_on_before_hit", on_npc_before_hit)
     RegisterScriptCallback("actor_on_interaction", on_actor_interaction)
-    RegisterScriptCallback("surge_manager_end_surge", on_surge_end)
-    RegisterScriptCallback("psi_storm_manager_end_storm", on_psy_storm_end)
     RegisterScriptCallback("on_game_load", on_game_load)
     RegisterScriptCallback("actor_on_first_update", on_game_load)
     RegisterScriptCallback("on_level_changing", on_level_changed)
