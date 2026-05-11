@@ -686,14 +686,20 @@ local function update_npc_restrictions(npc, detection_radius)
         dbg_verbose("RESTRICT", "[%s] added %d restrictions", npc:name() or "?", #detected)
     end
 
-    -- Smart Bolts: only let the engine probe/throw bolts when not in combat and near a cluster
+    -- Smart Bolts: engine anomaly pathfinding and script restrictions are mutually exclusive.
+    -- Having both active simultaneously corrupts the movement manager (setup_movement_params crash).
     local in_combat = safe_call(npc.best_enemy, npc) ~= nil
     local smart_bolt_threshold = get_mcm_setting("smart_bolt_min_count", 3)
 
-    if in_combat or #nearby < smart_bolt_threshold then
-        safe_call(npc.set_enable_anomalies_pathfinding, npc, false)
-    else
+    if not in_combat and #nearby >= smart_bolt_threshold then
+        -- Smart Bolts mode: engine probes with bolts — clear any script restrictions first
+        if npc_restrictions[id] then
+            clear_npc_restrictions(npc)
+            npc_restrict_start[id] = nil
+        end
         safe_call(npc.set_enable_anomalies_pathfinding, npc, true)
+    else
+        safe_call(npc.set_enable_anomalies_pathfinding, npc, false)
     end
 end
 
