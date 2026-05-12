@@ -40,6 +40,7 @@ local npc_restrictions    = {}
 local npc_last_anomaly    = {}
 local npc_restrict_start  = {}   -- id → timestamp when restrictions were first applied
 local npc_restrict_cooldown = {} -- id → timestamp until re-restriction is suppressed
+local npc_smart_bolts     = {}   -- id → {name=, since=} for NPCs MAI has set_enable_anomalies_pathfinding(true) on
 
 local ANOMALY_ATTRIBUTION_TIMEOUT = 5000
 local MAX_RESTRICTIONS_PER_NPC = 30
@@ -605,6 +606,10 @@ local function update_npc_restrictions(npc, detection_radius)
     if npc_restrict_cooldown[id] then
         if current_time < npc_restrict_cooldown[id] then
             if npc_restrictions[id] then clear_npc_restrictions(npc) end
+            if npc_smart_bolts[id] then
+                printf("[MAI][SB_OFF] [%s] id=%d (stuck cooldown active)", npc:name() or "?", id)
+                npc_smart_bolts[id] = nil
+            end
             safe_call(npc.set_enable_anomalies_pathfinding, npc, false)
             return
         else
@@ -623,6 +628,10 @@ local function update_npc_restrictions(npc, detection_radius)
             clear_npc_restrictions(npc)
             npc_restrict_start[id] = nil
         end
+        if npc_smart_bolts[id] then
+            printf("[MAI][SB_OFF] [%s] id=%d (no anomalies nearby)", npc:name() or "?", id)
+            npc_smart_bolts[id] = nil
+        end
         safe_call(npc.set_enable_anomalies_pathfinding, npc, false)
         return
     end
@@ -640,11 +649,20 @@ local function update_npc_restrictions(npc, detection_radius)
             clear_npc_restrictions(npc)
             npc_restrict_start[id] = nil
         end
+        if not npc_smart_bolts[id] then
+            printf("[MAI][SB_ON] [%s] id=%d (%d nearby anomalies)", npc:name() or "?", id, #nearby)
+            npc_smart_bolts[id] = { name = npc:name() or "?", since = current_time }
+        end
         safe_call(npc.set_enable_anomalies_pathfinding, npc, true)
         return
     end
 
     -- Restrictions mode: pathfinding disabled, script-side avoidance zones
+    if npc_smart_bolts[id] then
+        printf("[MAI][SB_OFF] [%s] id=%d (switching to restrictions mode; in_combat=%s nearby=%d)",
+            npc:name() or "?", id, tostring(in_combat), #nearby)
+        npc_smart_bolts[id] = nil
+    end
     safe_call(npc.set_enable_anomalies_pathfinding, npc, false)
 
     local miss_chance = get_rank_miss_chance(npc)
@@ -1011,22 +1029,39 @@ local function mai_periodic_tick()
                     configure_npc_anomaly_interaction(npc)
                 else
                     safe_call(npc.set_enable_anomalies_damage, npc, false)
+                    if npc_smart_bolts[id] then
+                        printf("[MAI][SB_OFF] [%s] id=%d (out of effect radius)", npc:name() or "?", id)
+                        npc_smart_bolts[id] = nil
+                    end
                     safe_call(npc.set_enable_anomalies_pathfinding, npc, false)
                 end
-                
+
                 if within_radius or restrictions_ignore_radius then
                     update_npc_restrictions(npc, detection_radius)
                 end
-                
+
                 processed = processed + 1
             end
         end
     end
-    
+
     if processed > 0 then
         dbg_verbose("UPDATE", "Processed %d NPCs (cache: %d anomalies)",
             processed, #anomaly_cache)
     end
+
+    -- Heartbeat + Smart Bolts state dump: fires every tick so we can confirm the timer chain
+    -- is alive right up to any crash/freeze. If MAI is the cause, the heartbeat stops a few
+    -- seconds before the hang; if the engine/UI hangs, the heartbeat runs up to the freeze.
+    local sb_count = 0
+    for sb_id, info in pairs(npc_smart_bolts) do
+        sb_count = sb_count + 1
+        printf("[MAI][SB_DUMP] id=%d name=%s (%.1fs ago)",
+            sb_id, info.name or "?",
+            (current_time - (info.since or current_time)) / 1000)
+    end
+    printf("[MAI][HEARTBEAT] tick processed=%d sb_active=%d cache=%d",
+        processed, sb_count, #anomaly_cache)
 end
 
 local function schedule_next_tick()
@@ -1177,6 +1212,7 @@ local function on_level_changed()
     npc_last_anomaly     = {}
     npc_restrict_start   = {}
     npc_restrict_cooldown = {}
+    npc_smart_bolts      = {}
     pcall_failures_seen  = {}
 
     -- The actor_on_first_update hook will re-arm the timer on the new level via on_game_load.
@@ -1204,6 +1240,7 @@ local function on_npc_net_destroy(npc)
     npc_last_anomaly[id]      = nil
     npc_restrict_start[id]    = nil
     npc_restrict_cooldown[id] = nil
+    npc_smart_bolts[id]       = nil
 end
 
 local function on_npc_net_spawn(npc)
