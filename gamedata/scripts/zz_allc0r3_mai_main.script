@@ -366,22 +366,30 @@ end
 local function should_enable_anomaly_damage(npc)
     if not is_valid_stalker(npc) then return false, "invalid" end
     if npc:id() == 0 then return true, "actor" end
-    
+
     local community = get_npc_community(npc)
     if not community then return true, "no_community" end
-    
-    if not zz_allc0r3_mai_npc_settings then return true, "no_settings" end
-    
-    if zz_allc0r3_mai_npc_settings.mai_always_full_ignore_community and
-       zz_allc0r3_mai_npc_settings.mai_always_full_ignore_community[community] then
-        return false, "full_ignore_community"
+
+    -- MCM-driven per-community damage opt-out (overrides hardcoded tables for these communities)
+    if community == "greh" and get_mcm_setting("greh_ignore_damage", true) then
+        return false, "mcm_greh_no_damage"
     end
-    
-    if zz_allc0r3_mai_npc_settings.mai_no_damage_community and
-       zz_allc0r3_mai_npc_settings.mai_no_damage_community[community] then
-        return false, "no_damage_community"
+    if community == "monolith" and get_mcm_setting("monolith_ignore_damage", true) then
+        return false, "mcm_monolith_no_damage"
     end
-    
+
+    if zz_allc0r3_mai_npc_settings and community ~= "greh" and community ~= "monolith" then
+        if zz_allc0r3_mai_npc_settings.mai_always_full_ignore_community and
+           zz_allc0r3_mai_npc_settings.mai_always_full_ignore_community[community] then
+            return false, "full_ignore_community"
+        end
+
+        if zz_allc0r3_mai_npc_settings.mai_no_damage_community and
+           zz_allc0r3_mai_npc_settings.mai_no_damage_community[community] then
+            return false, "no_damage_community"
+        end
+    end
+
     if is_ignore_npc(npc) then return false, "ignore_npc" end
     if is_companion_npc(npc) then return false, "companion" end
     if is_task_target_npc(npc) then return false, "task_target" end
@@ -420,16 +428,24 @@ local function should_add_restrictions(npc)
     local community = get_npc_community(npc)
     if not community then return true end
 
-    if not zz_allc0r3_mai_npc_settings then return true end
-
-    if zz_allc0r3_mai_npc_settings.mai_always_full_ignore_community and
-       zz_allc0r3_mai_npc_settings.mai_always_full_ignore_community[community] then
+    -- MCM-driven per-community restriction opt-out (overrides hardcoded tables for these communities)
+    if community == "greh" and get_mcm_setting("greh_ignore_restrictions", true) then
+        return false
+    end
+    if community == "monolith" and get_mcm_setting("monolith_ignore_restrictions", false) then
         return false
     end
 
-    if zz_allc0r3_mai_npc_settings.mai_no_evade_community and
-       zz_allc0r3_mai_npc_settings.mai_no_evade_community[community] then
-        return false
+    if zz_allc0r3_mai_npc_settings and community ~= "greh" and community ~= "monolith" then
+        if zz_allc0r3_mai_npc_settings.mai_always_full_ignore_community and
+           zz_allc0r3_mai_npc_settings.mai_always_full_ignore_community[community] then
+            return false
+        end
+
+        if zz_allc0r3_mai_npc_settings.mai_no_evade_community and
+           zz_allc0r3_mai_npc_settings.mai_no_evade_community[community] then
+            return false
+        end
     end
 
     if is_ignore_npc(npc) then return false end

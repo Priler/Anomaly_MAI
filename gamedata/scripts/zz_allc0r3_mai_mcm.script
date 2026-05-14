@@ -42,6 +42,12 @@ local defaults = {
     rank_expert_miss_chance = 0,
     rank_master_miss_chance = 0,
     rank_legend_miss_chance = 0,
+
+    -- community exclusions (defaults match the previously hardcoded npc_settings tables)
+    greh_ignore_damage = true,
+    greh_ignore_restrictions = true,
+    monolith_ignore_damage = true,
+    monolith_ignore_restrictions = false,
 }
 
 
@@ -135,6 +141,16 @@ function on_mcm_load()
             { id = "rank_expert_miss_chance",       type = "track", val = 2, min = 0, max = 100, step = 5, def = 0 },
             { id = "rank_master_miss_chance",       type = "track", val = 2, min = 0, max = 100, step = 5, def = 0 },
             { id = "rank_legend_miss_chance",       type = "track", val = 2, min = 0, max = 100, step = 5, def = 0 },
+
+            { id = "line_5", type = "line" },
+
+            -- community exclusions
+            { id = "community_excl_title", type = "title", text = "ui_mcm_mai_community_excl_title" },
+
+            { id = "greh_ignore_damage",           type = "check", val = 1, def = true },
+            { id = "greh_ignore_restrictions",     type = "check", val = 1, def = true },
+            { id = "monolith_ignore_damage",       type = "check", val = 1, def = true },
+            { id = "monolith_ignore_restrictions", type = "check", val = 1, def = false },
         }
     }
 end

@@ -228,4 +228,38 @@
         <text>Seconds an NPC can have path restrictions continuously active before stuck recovery triggers. Clears restrictions and gives a 6s grace period to move freely. Default: 8</text>
     </string>
 
+    <!-- ### Community Exclusions ### -->
+
+    <string id="ui_mcm_mai_community_excl_title">
+        <text>Community Exclusions</text>
+    </string>
+
+    <string id="ui_mcm_mai_greh_ignore_damage">
+        <text>Sin: Ignore anomaly damage</text>
+    </string>
+    <string id="ui_mcm_mai_greh_ignore_damage_desc">
+        <text>Sin (greh) faction NPCs are immune to anomaly damage. Default: ON</text>
+    </string>
+
+    <string id="ui_mcm_mai_greh_ignore_restrictions">
+        <text>Sin: Ignore anomaly avoidance</text>
+    </string>
+    <string id="ui_mcm_mai_greh_ignore_restrictions_desc">
+        <text>Sin (greh) faction NPCs do not get pathfinding restrictions to avoid anomalies. Default: ON</text>
+    </string>
+
+    <string id="ui_mcm_mai_monolith_ignore_damage">
+        <text>Monolith: Ignore anomaly damage</text>
+    </string>
+    <string id="ui_mcm_mai_monolith_ignore_damage_desc">
+        <text>Monolith faction NPCs are immune to anomaly damage (protected by faith). Default: ON</text>
+    </string>
+
+    <string id="ui_mcm_mai_monolith_ignore_restrictions">
+        <text>Monolith: Ignore anomaly avoidance</text>
+    </string>
+    <string id="ui_mcm_mai_monolith_ignore_restrictions_desc">
+        <text>Monolith faction NPCs do not get pathfinding restrictions to avoid anomalies. Default: OFF</text>
+    </string>
+
 </string_table>
