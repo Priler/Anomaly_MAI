@@ -43,7 +43,16 @@ local npc_restrict_cooldown = {} -- id → timestamp until re-restriction is sup
 local npc_smart_bolts     = {}   -- id → {name=, since=} for NPCs MAI has set_enable_anomalies_pathfinding(true) on
 
 local ANOMALY_ATTRIBUTION_TIMEOUT = 5000
-local MAX_RESTRICTIONS_PER_NPC = 30
+-- Hard cap on simultaneous restriction zones per NPC. Too many overlapping
+-- out-of-bounds zones can fully enclose an NPC, leaving no accessible vertex —
+-- the engine then stores its u32(-1) sentinel as the destination and crashes in
+-- setup_movement_params. Keep this small; 3 zones cannot realistically seal off
+-- an NPC's reachable area.
+local MAX_RESTRICTIONS_PER_NPC = 3
+-- Don't restrict an anomaly the NPC is already inside/touching: restricting the
+-- zone the NPC currently occupies pins it to its now-inaccessible vertex, which
+-- is the direct path to full enclosure. Meters from the anomaly center.
+local MIN_RESTRICT_DISTANCE = 4
 
 local pcall_failures_seen = {}
 
@@ -130,6 +139,12 @@ local function dbg_verbose(category, format, ...)
     if not is_verbose_debug() then return end
     local msg = sformat(format, ...)
     printf("[%s][MAI][%s] %s", time_global(), category, msg)
+end
+
+-- Always-on diagnostic logging. The engine's printf only substitutes %s, so the
+-- message is built with sformat first (which supports %d/%.1f) then passed as %s.
+local function diag_log(category, format, ...)
+    printf("[%s][MAI][%s] %s", time_global(), category, sformat(format, ...))
 end
 
 
@@ -623,7 +638,7 @@ local function update_npc_restrictions(npc, detection_radius)
         if current_time < npc_restrict_cooldown[id] then
             if npc_restrictions[id] then clear_npc_restrictions(npc) end
             if npc_smart_bolts[id] then
-                printf("[MAI][SB_OFF] [%s] id=%d (stuck cooldown active)", npc:name() or "?", id)
+                diag_log("SB_OFF", "[%s] id=%d (stuck cooldown active)", npc:name() or "?", id)
                 npc_smart_bolts[id] = nil
             end
             safe_call(npc.set_enable_anomalies_pathfinding, npc, false)
@@ -645,7 +660,7 @@ local function update_npc_restrictions(npc, detection_radius)
             npc_restrict_start[id] = nil
         end
         if npc_smart_bolts[id] then
-            printf("[MAI][SB_OFF] [%s] id=%d (no anomalies nearby)", npc:name() or "?", id)
+            diag_log("SB_OFF", "[%s] id=%d (no anomalies nearby)", npc:name() or "?", id)
             npc_smart_bolts[id] = nil
         end
         safe_call(npc.set_enable_anomalies_pathfinding, npc, false)
@@ -666,7 +681,7 @@ local function update_npc_restrictions(npc, detection_radius)
             npc_restrict_start[id] = nil
         end
         if not npc_smart_bolts[id] then
-            printf("[MAI][SB_ON] [%s] id=%d (%d nearby anomalies)", npc:name() or "?", id, #nearby)
+            diag_log("SB_ON", "[%s] id=%d (%d nearby anomalies)", npc:name() or "?", id, #nearby)
             npc_smart_bolts[id] = { name = npc:name() or "?", since = current_time }
         end
         safe_call(npc.set_enable_anomalies_pathfinding, npc, true)
@@ -675,7 +690,7 @@ local function update_npc_restrictions(npc, detection_radius)
 
     -- Restrictions mode: pathfinding disabled, script-side avoidance zones
     if npc_smart_bolts[id] then
-        printf("[MAI][SB_OFF] [%s] id=%d (switching to restrictions mode; in_combat=%s nearby=%d)",
+        diag_log("SB_OFF", "[%s] id=%d (switching to restrictions mode; in_combat=%s nearby=%d)",
             npc:name() or "?", id, tostring(in_combat), #nearby)
         npc_smart_bolts[id] = nil
     end
@@ -696,7 +711,14 @@ local function update_npc_restrictions(npc, detection_radius)
     for _, anom in ipairs(nearby) do
         local immune_zero = get_mcm_setting("immune_zero_miss_chance", true)
 
-        if immune_zero and final_miss <= 0 then
+        -- Skip anomalies the NPC is already inside/touching. Restricting the zone
+        -- the NPC currently occupies pins it to its own now-inaccessible vertex.
+        local too_close = anom.pos and npc_pos:distance_to(anom.pos) < MIN_RESTRICT_DISTANCE
+
+        if too_close then
+            dbg_verbose("DETECT", "[%s] skipped [%s] (inside zone, too close to restrict)",
+                npc:name() or "?", anom.name)
+        elseif immune_zero and final_miss <= 0 then
             tinsert(detected, anom.name)
         else
             local roll = mrand(1, 100)
@@ -1046,7 +1068,7 @@ local function mai_periodic_tick()
                 else
                     safe_call(npc.set_enable_anomalies_damage, npc, false)
                     if npc_smart_bolts[id] then
-                        printf("[MAI][SB_OFF] [%s] id=%d (out of effect radius)", npc:name() or "?", id)
+                        diag_log("SB_OFF", "[%s] id=%d (out of effect radius)", npc:name() or "?", id)
                         npc_smart_bolts[id] = nil
                     end
                     safe_call(npc.set_enable_anomalies_pathfinding, npc, false)
@@ -1072,11 +1094,11 @@ local function mai_periodic_tick()
     local sb_count = 0
     for sb_id, info in pairs(npc_smart_bolts) do
         sb_count = sb_count + 1
-        printf("[MAI][SB_DUMP] id=%d name=%s (%.1fs ago)",
+        diag_log("SB_DUMP", "id=%d name=%s (%.1fs ago)",
             sb_id, info.name or "?",
             (current_time - (info.since or current_time)) / 1000)
     end
-    printf("[MAI][HEARTBEAT] tick processed=%d sb_active=%d cache=%d",
+    diag_log("HEARTBEAT", "tick processed=%d sb_active=%d cache=%d",
         processed, sb_count, #anomaly_cache)
 end
 
