@@ -667,10 +667,12 @@ local function update_npc_restrictions(npc, detection_radius)
         return
     end
 
-    -- Smart Bolts vs script restrictions are mutually exclusive in the engine.
-    -- Decide which mode to use BEFORE touching restrictions — calling add_restrictions
-    -- and set_enable_anomalies_pathfinding(true) in the same tick (even with a clear
-    -- between them) corrupts the movement manager (setup_movement_params crash).
+    -- Pick one avoidance mode per tick: engine bolt-throwing (Smart Bolts) for
+    -- dense clusters, or script restriction zones otherwise. Running both is
+    -- redundant work, so we decide up-front and skip the unused path. NOTE: this
+    -- is not what prevents the setup_movement_params crash -- that crash is
+    -- over-restriction enclosure, guarded by MAX_RESTRICTIONS_PER_NPC and the
+    -- MIN_RESTRICT_DISTANCE skip below.
     local in_combat = safe_call(npc.best_enemy, npc) ~= nil
     local smart_bolt_threshold = get_mcm_setting("smart_bolt_min_count", 3)
     local use_smart_bolts = (not in_combat) and (#nearby >= smart_bolt_threshold)
@@ -898,7 +900,7 @@ function get_npc_dmg_mult(npc, anomaly)
     local protection = get_npc_outfit_protection(npc, protection_type)
     local damage_mult = mmax(0, 1.0 - protection)
     
-    dbg_verbose("ARMOR", "[%s] → %s → prot %.2f → mult %.2f",
+    dbg_verbose("ARMOR", "[%s] -> %s -> prot %.2f -> mult %.2f",
         anomaly_section, protection_type, protection, damage_mult)
     
     return damage_mult
