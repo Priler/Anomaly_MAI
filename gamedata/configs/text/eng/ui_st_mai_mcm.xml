@@ -119,6 +119,13 @@
     <string id="ui_mcm_mai_block_anomalies_on_corpses_desc">
         <text>Prevent anomalies from activating on dead bodies. Stops ragdoll physics glitches and improves performance.</text>
     </string>
+
+    <string id="ui_mcm_mai_block_corpse_loot_in_anomalies">
+        <text>Block Loot in Anomalies</text>
+    </string>
+    <string id="ui_mcm_mai_block_corpse_loot_in_anomalies_desc">
+        <text>Prevent NPCs from walking into anomaly fields to loot corpses. Stops chain-deaths where stalkers follow each other into anomalies. Default: ON</text>
+    </string>
     
     <!-- ### Movement State Multipliers ### -->
     

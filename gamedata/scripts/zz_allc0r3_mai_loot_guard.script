@@ -1,0 +1,106 @@
+-- MAI Corpse-Loot Guard
+-- Blocks NPC loot AI from selecting corpses inside anomaly fields.
+--
+-- Why: when one NPC dies in an anomaly, others queue up to loot the body,
+-- die in the same anomaly, and the chain continues. Corpse-loot AI sets the
+-- looter's destination AS the corpse position, so MAI's restriction zones
+-- (which only block paths THROUGH a zone) can't intervene.
+--
+-- How: monkey-patch xr_corpse_detection.evaluator_corpse:find_valid_target.
+-- After the original commits a target, if the target is inside an anomaly
+-- we mark the corpse non-lootable for all NPCs and clear the commit.
+
+
+-- Corpses with a loot target this close to any anomaly center are hidden
+-- from NPC loot AI. 5m covers the lethal radius of most anomaly types.
+local LOOT_BLOCK_RADIUS = 5
+
+local installed = false
+
+
+local function get_mcm_enabled()
+    if zz_allc0r3_mai_mcm and zz_allc0r3_mai_mcm.get_config then
+        local val = zz_allc0r3_mai_mcm.get_config("block_corpse_loot_in_anomalies")
+        if val ~= nil then return val end
+    end
+    return true
+end
+
+local function is_position_in_anomaly(pos)
+    if zz_allc0r3_mai_main and zz_allc0r3_mai_main.is_position_in_anomaly then
+        return zz_allc0r3_mai_main.is_position_in_anomaly(pos, LOOT_BLOCK_RADIUS)
+    end
+    return false
+end
+
+local function debug_enabled()
+    return zz_allc0r3_mai_main and zz_allc0r3_mai_main.is_debug_enabled
+        and zz_allc0r3_mai_main.is_debug_enabled() or false
+end
+
+local function log(format, ...)
+    printf("[%s][MAI][LOOT_GUARD] %s", time_global(), string.format(format, ...))
+end
+
+
+local function install()
+    if installed then return end
+
+    if not xr_corpse_detection or not xr_corpse_detection.evaluator_corpse then
+        log("xr_corpse_detection not loaded; guard disabled")
+        return
+    end
+
+    local cls = xr_corpse_detection.evaluator_corpse
+    local orig = cls.find_valid_target
+    if not orig then
+        log("find_valid_target missing on evaluator_corpse; guard disabled")
+        return
+    end
+
+    cls.find_valid_target = function(self)
+        if not get_mcm_enabled() then
+            return orig(self)
+        end
+
+        local result = orig(self)
+        if not result then return false end
+        if not self.a then return result end
+
+        local target_pos = self.a.vertex_position or self.a.nearest_corpse_position
+        if not target_pos then return result end
+
+        if not is_position_in_anomaly(target_pos) then return result end
+
+        local picked_id = self.a.selected_corpse_id
+
+        -- Mark the corpse unlootable for every NPC. Anomaly positions don't move,
+        -- so the block persists for the corpse's lifetime.
+        if picked_id and xr_corpse_detection.set_valuable_loot then
+            xr_corpse_detection.set_valuable_loot(picked_id, false)
+        end
+
+        -- Release the claim and clear the commit so the engine won't path here.
+        if picked_id and db.storage[picked_id] then
+            db.storage[picked_id].corpse_already_selected = nil
+        end
+        self.a.selected_corpse_id = nil
+        self.a.vertex_id = nil
+        self.a.vertex_position = nil
+        self.a.state = nil
+
+        if debug_enabled() then
+            log("[%s] blocked corpse %s (inside anomaly)",
+                self.object and self.object:name() or "?", tostring(picked_id))
+        end
+        return false
+    end
+
+    installed = true
+    log("Corpse-loot anomaly guard installed")
+end
+
+
+function on_game_start()
+    install()
+end

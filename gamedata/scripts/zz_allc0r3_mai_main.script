@@ -1194,6 +1194,19 @@ function rebuild_anomaly_cache_now()
     rebuild_anomaly_cache()
 end
 
+-- True if `pos` is within `radius` meters of any cached anomaly center.
+function is_position_in_anomaly(pos, radius)
+    if not pos then return false end
+    radius = radius or 5
+    ensure_cache()
+    for _, anom in ipairs(anomaly_cache) do
+        if anom.pos and pos:distance_to(anom.pos) <= radius then
+            return true
+        end
+    end
+    return false
+end
+
 
 -- [ Event Callbacks ]--
 

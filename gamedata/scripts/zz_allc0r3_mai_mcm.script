@@ -26,6 +26,7 @@ local defaults = {
     enable_armor_damage_mult = true,
     immune_zero_miss_chance = true,
     block_anomalies_on_corpses = true,
+    block_corpse_loot_in_anomalies = true,
     
     -- movement
     standing_miss_multiplier = 0.3,
@@ -114,9 +115,10 @@ function on_mcm_load()
             -- damage
             { id = "damage_title", type = "title", text = "ui_mcm_mai_damage_title" },
             
-            { id = "enable_armor_damage_mult",   type = "check", val = 1, def = true },
-            { id = "immune_zero_miss_chance",    type = "check", val = 1, def = true },
-            { id = "block_anomalies_on_corpses", type = "check", val = 1, def = true },
+            { id = "enable_armor_damage_mult",       type = "check", val = 1, def = true },
+            { id = "immune_zero_miss_chance",        type = "check", val = 1, def = true },
+            { id = "block_anomalies_on_corpses",     type = "check", val = 1, def = true },
+            { id = "block_corpse_loot_in_anomalies", type = "check", val = 1, def = true },
             
             { id = "line_3", type = "line" },
             
