@@ -221,11 +221,25 @@
         <text>Pathfinding Settings</text>
     </string>
 
+    <string id="ui_mcm_mai_smart_bolts_enabled">
+        <text>Enable Smart Bolts</text>
+    </string>
+    <string id="ui_mcm_mai_smart_bolts_enabled_desc">
+        <text>Allow NPCs to use engine bolt-throwing for anomaly detection in dense fields. Disable to use script restrictions only (no bolts thrown). Default: ON</text>
+    </string>
+
     <string id="ui_mcm_mai_smart_bolt_min_count">
         <text>Smart Bolt Threshold</text>
     </string>
     <string id="ui_mcm_mai_smart_bolt_min_count_desc">
         <text>Minimum nearby anomalies before NPCs use engine bolt-throwing to probe the field. In combat, bolt-throwing is always disabled. Default: 3</text>
+    </string>
+
+    <string id="ui_mcm_mai_smart_bolt_max_duration">
+        <text>Smart Bolt Max Duration (s)</text>
+    </string>
+    <string id="ui_mcm_mai_smart_bolt_max_duration_desc">
+        <text>Maximum seconds an NPC stays in bolt-throwing mode per encounter. Caps bolt accumulation and prevents NPCs from looping in Smart Bolts indefinitely. NPC switches to script restrictions until fully clear of anomalies, then Smart Bolts re-arms. Default: 5s</text>
     </string>
 
     <string id="ui_mcm_mai_npc_stuck_timeout">

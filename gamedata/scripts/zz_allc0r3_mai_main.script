@@ -41,6 +41,7 @@ local npc_last_anomaly    = {}
 local npc_restrict_start  = {}   -- id → timestamp when restrictions were first applied
 local npc_restrict_cooldown = {} -- id → timestamp until re-restriction is suppressed
 local npc_smart_bolts     = {}   -- id → {name=, since=} for NPCs MAI has set_enable_anomalies_pathfinding(true) on
+local npc_sb_exhausted    = {}   -- id → true while NPC must stay off Smart Bolts until anomalies fully clear
 
 local ANOMALY_ATTRIBUTION_TIMEOUT = 5000
 -- Hard cap on simultaneous restriction zones per NPC. Too many overlapping
@@ -663,6 +664,8 @@ local function update_npc_restrictions(npc, detection_radius)
             diag_log("SB_OFF", "[%s] id=%d (no anomalies nearby)", npc:name() or "?", id)
             npc_smart_bolts[id] = nil
         end
+        -- Area is clear: NPC may re-enter Smart Bolts mode next time it approaches anomalies.
+        npc_sb_exhausted[id] = nil
         safe_call(npc.set_enable_anomalies_pathfinding, npc, false)
         return
     end
@@ -675,7 +678,24 @@ local function update_npc_restrictions(npc, detection_radius)
     -- MIN_RESTRICT_DISTANCE skip below.
     local in_combat = safe_call(npc.best_enemy, npc) ~= nil
     local smart_bolt_threshold = get_mcm_setting("smart_bolt_min_count", 3)
-    local use_smart_bolts = (not in_combat) and (#nearby >= smart_bolt_threshold)
+    local smart_bolts_enabled = get_mcm_setting("smart_bolts_enabled", true)
+    local use_smart_bolts = smart_bolts_enabled
+        and (not in_combat)
+        and (not npc_sb_exhausted[id])
+        and (#nearby >= smart_bolt_threshold)
+
+    -- Cap Smart Bolts activation duration to limit bolt accumulation over long sessions.
+    -- Once exhausted, the NPC stays on restrictions until it fully clears all nearby anomalies
+    -- (handled in the #nearby == 0 branch above), preventing rapid re-entry oscillation.
+    if use_smart_bolts and npc_smart_bolts[id] then
+        local max_dur_ms = get_mcm_setting("smart_bolt_max_duration", 5) * 1000
+        if current_time - npc_smart_bolts[id].since > max_dur_ms then
+            use_smart_bolts = false
+            npc_sb_exhausted[id] = true
+            diag_log("SB_OFF", "[%s] id=%d (max duration reached, switching to restrictions)", npc:name() or "?", id)
+            npc_smart_bolts[id] = nil
+        end
+    end
 
     if use_smart_bolts then
         if npc_restrictions[id] then
@@ -1248,6 +1268,7 @@ local function on_game_load()
     npc_last_anomaly     = {}
     npc_restrict_start   = {}
     npc_restrict_cooldown = {}
+    npc_sb_exhausted     = {}
     anomaly_protection_cache = {}
     pcall_failures_seen  = {}
 
@@ -1266,6 +1287,7 @@ local function on_level_changed()
     npc_restrict_start   = {}
     npc_restrict_cooldown = {}
     npc_smart_bolts      = {}
+    npc_sb_exhausted     = {}
     pcall_failures_seen  = {}
 
     -- The actor_on_first_update hook will re-arm the timer on the new level via on_game_load.
@@ -1294,6 +1316,7 @@ local function on_npc_net_destroy(npc)
     npc_restrict_start[id]    = nil
     npc_restrict_cooldown[id] = nil
     npc_smart_bolts[id]       = nil
+    npc_sb_exhausted[id]      = nil
 end
 
 local function on_npc_net_spawn(npc)
