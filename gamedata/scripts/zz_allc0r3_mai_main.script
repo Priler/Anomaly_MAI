@@ -35,16 +35,10 @@ local cached_show_debug_anomalies = false
 
 local debug_anomalies_shown = false
 
-local npc_last_update     = {}
-local npc_restrictions    = {}
-local npc_last_anomaly    = {}
-local npc_restrict_start  = {}   -- id → timestamp when restrictions were first applied
-local npc_restrict_cooldown = {} -- id → timestamp until re-restriction is suppressed
-local npc_smart_bolts     = {}   -- id → {name=, since=} for NPCs MAI has set_enable_anomalies_pathfinding(true) on
-local npc_sb_exhausted    = {}   -- id → true while NPC must stay off Smart Bolts until anomalies fully clear
-local npc_known_anomalies = {}   -- id → {[anom_name] = {last_seen=ms}} anomalies remembered by this NPC
-local npc_stuck_count    = {}   -- id → consecutive stuck-trigger count; resets when NPC escapes the field
-local npc_force_through  = {}   -- id → expire_time_ms; NPC is exempt from MAI restrictions during this window
+-- Per-NPC state. All fields are optional; the table entry is created on first access and
+-- deleted on net_destroy. Fields: last_update, restrictions, last_anomaly, restrict_start,
+-- cooldown, smart_bolts, sb_exhausted, known_anomalies, stuck_count, force_through.
+local npc_state = {}
 
 local ANOMALY_ATTRIBUTION_TIMEOUT = 5000
 -- Hard cap on simultaneous restriction zones per NPC. Too many overlapping
@@ -622,7 +616,8 @@ local function clear_npc_restrictions(npc)
         dbg_verbose("RESTRICT", "Cleared restrictions for [%s]", npc:name() or "?")
     end
     
-    npc_restrictions[id] = nil
+    local st = npc_state[id]
+    if st then st.restrictions = nil end
 end
 
 local function update_npc_restrictions(npc, detection_radius)
@@ -631,40 +626,40 @@ local function update_npc_restrictions(npc, detection_radius)
 
     local id = npc:id()
     local current_time = time_global()
+    local st = npc_state[id]
+    if not st then st = {}; npc_state[id] = st end
 
-    if npc_last_update[id] and current_time - npc_last_update[id] < 1500 then
+    if st.last_update and current_time - st.last_update < 1500 then
         return
     end
-    npc_last_update[id] = current_time
+    st.last_update = current_time
 
     -- Stuck cooldown: hold off re-restricting so the NPC can move freely
-    if npc_restrict_cooldown[id] then
-        if current_time < npc_restrict_cooldown[id] then
-            if npc_restrictions[id] then clear_npc_restrictions(npc) end
-            if npc_smart_bolts[id] then
+    if st.cooldown then
+        if current_time < st.cooldown then
+            if st.restrictions then clear_npc_restrictions(npc) end
+            if st.smart_bolts then
                 diag_log("SB_OFF", "[%s] id=%d (stuck cooldown active)", npc:name() or "?", id)
-                npc_smart_bolts[id] = nil
+                st.smart_bolts = nil
             end
             safe_call(npc.set_enable_anomalies_pathfinding, npc, false)
             return
         else
-            npc_restrict_cooldown[id] = nil
+            st.cooldown = nil
         end
     end
 
     -- Force-through: NPC is exempt from all MAI restrictions to escape a trapped position.
     -- Engine-native anomaly damage still applies during this window.
-    if npc_force_through[id] then
-        if current_time < npc_force_through[id] then
-            if npc_restrictions[id] then clear_npc_restrictions(npc) end
-            if npc_smart_bolts[id] then
-                npc_smart_bolts[id] = nil
-            end
+    if st.force_through then
+        if current_time < st.force_through then
+            if st.restrictions then clear_npc_restrictions(npc) end
+            if st.smart_bolts then st.smart_bolts = nil end
             safe_call(npc.set_enable_anomalies_pathfinding, npc, false)
             return
         else
-            npc_force_through[id] = nil
-            npc_stuck_count[id]   = nil
+            st.force_through = nil
+            st.stuck_count   = nil
             diag_log("FORCE_THROUGH", "[%s] force-through expired, resuming normal avoidance", npc:name() or "?")
         end
     end
@@ -676,22 +671,22 @@ local function update_npc_restrictions(npc, detection_radius)
     local nearby = get_nearby_anomalies(npc_pos, radius)
 
     if #nearby == 0 then
-        if npc_restrictions[id] then
+        if st.restrictions then
             clear_npc_restrictions(npc)
-            npc_restrict_start[id] = nil
+            st.restrict_start = nil
         end
-        if npc_smart_bolts[id] then
+        if st.smart_bolts then
             diag_log("SB_OFF", "[%s] id=%d (no anomalies nearby)", npc:name() or "?", id)
-            npc_smart_bolts[id] = nil
+            st.smart_bolts = nil
         end
         -- Area is clear: NPC may re-enter Smart Bolts mode next time it approaches anomalies.
-        npc_sb_exhausted[id] = nil
-        npc_stuck_count[id]  = nil
+        st.sb_exhausted = nil
+        st.stuck_count  = nil
 
         -- Decay anomaly memory while NPC is away from all anomaly fields.
         local mem_decay_ms = get_mcm_setting("anomaly_memory_decay", 30) * 1000
-        if mem_decay_ms > 0 and npc_known_anomalies[id] then
-            local known = npc_known_anomalies[id]
+        if mem_decay_ms > 0 and st.known_anomalies then
+            local known = st.known_anomalies
             local cache_by_name = {}
             for _, c in ipairs(anomaly_cache) do cache_by_name[c.name] = c.pos end
             for anom_name, mem in pairs(known) do
@@ -703,7 +698,7 @@ local function update_npc_restrictions(npc, detection_radius)
                     known[anom_name] = nil
                 end
             end
-            if next(known) == nil then npc_known_anomalies[id] = nil end
+            if next(known) == nil then st.known_anomalies = nil end
         end
 
         safe_call(npc.set_enable_anomalies_pathfinding, npc, false)
@@ -721,40 +716,40 @@ local function update_npc_restrictions(npc, detection_radius)
     local smart_bolts_enabled = get_mcm_setting("smart_bolts_enabled", true)
     local use_smart_bolts = smart_bolts_enabled
         and (not in_combat)
-        and (not npc_sb_exhausted[id])
+        and (not st.sb_exhausted)
         and (#nearby >= smart_bolt_threshold)
 
     -- Cap Smart Bolts activation duration to limit bolt accumulation over long sessions.
     -- Once exhausted, the NPC stays on restrictions until it fully clears all nearby anomalies
     -- (handled in the #nearby == 0 branch above), preventing rapid re-entry oscillation.
-    if use_smart_bolts and npc_smart_bolts[id] then
+    if use_smart_bolts and st.smart_bolts then
         local max_dur_ms = get_mcm_setting("smart_bolt_max_duration", 5) * 1000
-        if current_time - npc_smart_bolts[id].since > max_dur_ms then
+        if current_time - st.smart_bolts.since > max_dur_ms then
             use_smart_bolts = false
-            npc_sb_exhausted[id] = true
+            st.sb_exhausted = true
             diag_log("SB_OFF", "[%s] id=%d (max duration reached, switching to restrictions)", npc:name() or "?", id)
-            npc_smart_bolts[id] = nil
+            st.smart_bolts = nil
         end
     end
 
     if use_smart_bolts then
-        if npc_restrictions[id] then
+        if st.restrictions then
             clear_npc_restrictions(npc)
-            npc_restrict_start[id] = nil
+            st.restrict_start = nil
         end
-        if not npc_smart_bolts[id] then
+        if not st.smart_bolts then
             diag_log("SB_ON", "[%s] id=%d (%d nearby anomalies)", npc:name() or "?", id, #nearby)
-            npc_smart_bolts[id] = { name = npc:name() or "?", since = current_time }
+            st.smart_bolts = { name = npc:name() or "?", since = current_time }
         end
         safe_call(npc.set_enable_anomalies_pathfinding, npc, true)
         return
     end
 
     -- Restrictions mode: pathfinding disabled, script-side avoidance zones
-    if npc_smart_bolts[id] then
+    if st.smart_bolts then
         diag_log("SB_OFF", "[%s] id=%d (switching to restrictions mode; in_combat=%s nearby=%d)",
             npc:name() or "?", id, tostring(in_combat), #nearby)
-        npc_smart_bolts[id] = nil
+        st.smart_bolts = nil
     end
     safe_call(npc.set_enable_anomalies_pathfinding, npc, false)
 
@@ -804,8 +799,8 @@ local function update_npc_restrictions(npc, detection_radius)
     -- so a failed RNG on a later tick doesn't un-restrict a field the NPC already saw.
     local mem_decay_ms = get_mcm_setting("anomaly_memory_decay", 30) * 1000
     if mem_decay_ms > 0 then
-        npc_known_anomalies[id] = npc_known_anomalies[id] or {}
-        local known = npc_known_anomalies[id]
+        st.known_anomalies = st.known_anomalies or {}
+        local known = st.known_anomalies
         local cache_by_name = {}
         for _, c in ipairs(anomaly_cache) do cache_by_name[c.name] = c.pos end
 
@@ -855,21 +850,21 @@ local function update_npc_restrictions(npc, detection_radius)
         -- count=2: 15s cooldown + warning (second consecutive without escaping field).
         -- count≥3: 20s force-through — restrictions suspended so NPC can cross the field.
         local stuck_ms = get_mcm_setting("npc_stuck_timeout", 8) * 1000
-        if npc_restrict_start[id] and (current_time - npc_restrict_start[id]) > stuck_ms then
-            npc_stuck_count[id] = (npc_stuck_count[id] or 0) + 1
-            local count = npc_stuck_count[id]
+        if st.restrict_start and (current_time - st.restrict_start) > stuck_ms then
+            st.stuck_count = (st.stuck_count or 0) + 1
+            local count = st.stuck_count
             clear_npc_restrictions(npc)
-            npc_restrict_start[id] = nil
+            st.restrict_start = nil
 
             if count >= 3 and get_mcm_setting("force_through_enabled", true) then
-                npc_force_through[id] = current_time + 20000
-                npc_stuck_count[id]   = nil
+                st.force_through = current_time + 20000
+                st.stuck_count   = nil
                 diag_log("FORCE_THROUGH", "[%s] stuck x%d - suspending MAI restrictions for 20s", npc:name() or "?", count)
             elseif count >= 2 then
-                npc_restrict_cooldown[id] = current_time + 15000
+                st.cooldown = current_time + 15000
                 diag_log("STUCK", "[%s] stuck x%d - cleared restrictions (15s cooldown)", npc:name() or "?", count)
             else
-                npc_restrict_cooldown[id] = current_time + 6000
+                st.cooldown = current_time + 6000
                 dbg_log("STUCK", "[%s] stuck timeout - cleared restrictions (6s cooldown)", npc:name() or "?")
             end
             return
@@ -879,10 +874,10 @@ local function update_npc_restrictions(npc, detection_radius)
 
         local add_str = tconcat(detected, ",")
         safe_call(npc.add_restrictions, npc, "", add_str)
-        npc_restrictions[id] = detected
+        st.restrictions = detected
 
-        if not npc_restrict_start[id] then
-            npc_restrict_start[id] = current_time
+        if not st.restrict_start then
+            st.restrict_start = current_time
         end
 
         dbg_verbose("RESTRICT", "[%s] added %d restrictions", npc:name() or "?", #detected)
@@ -936,7 +931,9 @@ local function on_anomaly_before_activate(zone, obj, flags)
     dbg_log("DAMAGE", "[%s] (%s %s) walked into [%s]", 
         obj:name() or "?", rank, state, zone_name)
     
-    npc_last_anomaly[obj_id] = {
+    local st = npc_state[obj_id]
+    if not st then st = {}; npc_state[obj_id] = st end
+    st.last_anomaly = {
         name = zone_name,
         section = zone_section,
         time = time_global(),
@@ -1118,27 +1115,31 @@ end
 
 local function check_anomaly_deaths(current_time)
     local to_remove = {}
-    
-    for npc_id, anomaly_info in pairs(npc_last_anomaly) do
-        if (current_time - anomaly_info.time) > ANOMALY_ATTRIBUTION_TIMEOUT then
-            tinsert(to_remove, npc_id)
-        else
-            local npc = level.object_by_id(npc_id)
-            if npc then
-                local alive = safe_call(npc.alive, npc)
-                if not alive and not anomaly_info.reported then
-                    anomaly_info.reported = true
-                    report_anomaly_death(npc, anomaly_info)
+
+    for npc_id, st in pairs(npc_state) do
+        local anomaly_info = st.last_anomaly
+        if anomaly_info then
+            if (current_time - anomaly_info.time) > ANOMALY_ATTRIBUTION_TIMEOUT then
+                tinsert(to_remove, npc_id)
+            else
+                local npc = level.object_by_id(npc_id)
+                if npc then
+                    local alive = safe_call(npc.alive, npc)
+                    if not alive and not anomaly_info.reported then
+                        anomaly_info.reported = true
+                        report_anomaly_death(npc, anomaly_info)
+                        tinsert(to_remove, npc_id)
+                    end
+                else
                     tinsert(to_remove, npc_id)
                 end
-            else
-                tinsert(to_remove, npc_id)
             end
         end
     end
-    
+
     for _, npc_id in ipairs(to_remove) do
-        npc_last_anomaly[npc_id] = nil
+        local st = npc_state[npc_id]
+        if st then st.last_anomaly = nil end
     end
 end
 
@@ -1194,9 +1195,10 @@ local function mai_periodic_tick()
                     configure_npc_anomaly_interaction(npc)
                 else
                     safe_call(npc.set_enable_anomalies_damage, npc, false)
-                    if npc_smart_bolts[id] then
+                    local st = npc_state[id]
+                    if st and st.smart_bolts then
                         diag_log("SB_OFF", "[%s] id=%d (out of effect radius)", npc:name() or "?", id)
-                        npc_smart_bolts[id] = nil
+                        st.smart_bolts = nil
                     end
                     safe_call(npc.set_enable_anomalies_pathfinding, npc, false)
                 end
@@ -1219,11 +1221,13 @@ local function mai_periodic_tick()
     -- is alive right up to any crash/freeze. If MAI is the cause, the heartbeat stops a few
     -- seconds before the hang; if the engine/UI hangs, the heartbeat runs up to the freeze.
     local sb_count = 0
-    for sb_id, info in pairs(npc_smart_bolts) do
-        sb_count = sb_count + 1
-        diag_log("SB_DUMP", "id=%d name=%s (%.1fs ago)",
-            sb_id, info.name or "?",
-            (current_time - (info.since or current_time)) / 1000)
+    for npc_id, st in pairs(npc_state) do
+        if st.smart_bolts then
+            sb_count = sb_count + 1
+            diag_log("SB_DUMP", "id=%d name=%s (%.1fs ago)",
+                npc_id, st.smart_bolts.name or "?",
+                (current_time - (st.smart_bolts.since or current_time)) / 1000)
+        end
     end
     diag_log("HEARTBEAT", "tick processed=%d sb_active=%d cache=%d",
         processed, sb_count, #anomaly_cache)
@@ -1368,15 +1372,7 @@ local function on_game_load()
     safe_call(exec_console_cmd, "ai_die_in_anomaly 1")
 
     invalidate_cache()
-    npc_last_update      = {}
-    npc_restrictions     = {}
-    npc_last_anomaly     = {}
-    npc_restrict_start   = {}
-    npc_restrict_cooldown = {}
-    npc_sb_exhausted     = {}
-    npc_known_anomalies  = {}
-    npc_stuck_count      = {}
-    npc_force_through    = {}
+    npc_state            = {}
     anomaly_protection_cache = {}
     pcall_failures_seen  = {}
 
@@ -1389,16 +1385,7 @@ end
 local function on_level_changed()
     dbg_verbose("EVENT", "Level changed")
     invalidate_cache()
-    npc_last_update      = {}
-    npc_restrictions     = {}
-    npc_last_anomaly     = {}
-    npc_restrict_start   = {}
-    npc_restrict_cooldown = {}
-    npc_smart_bolts      = {}
-    npc_sb_exhausted     = {}
-    npc_known_anomalies  = {}
-    npc_stuck_count      = {}
-    npc_force_through    = {}
+    npc_state            = {}
     pcall_failures_seen  = {}
 
     -- The actor_on_first_update hook will re-arm the timer on the new level via on_game_load.
@@ -1421,16 +1408,7 @@ local function on_npc_net_destroy(npc)
         return
     end
     
-    npc_last_update[id]       = nil
-    npc_restrictions[id]      = nil
-    npc_last_anomaly[id]      = nil
-    npc_restrict_start[id]    = nil
-    npc_restrict_cooldown[id] = nil
-    npc_smart_bolts[id]       = nil
-    npc_sb_exhausted[id]      = nil
-    npc_known_anomalies[id]   = nil
-    npc_stuck_count[id]       = nil
-    npc_force_through[id]     = nil
+    npc_state[id] = nil
 end
 
 local function on_npc_net_spawn(npc)
