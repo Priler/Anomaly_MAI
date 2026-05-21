@@ -1239,8 +1239,8 @@ local function schedule_next_tick()
         if not ok then
             printf("[MAI][TICK_FAIL] %s", tostring(err))
         end
-        schedule_next_tick()
-        return true
+        ResetTimeEvent("mai_periodic", "mai_tick", UPDATE_INTERVAL_SEC)
+        return false
     end)
 end
 
