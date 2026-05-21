@@ -42,6 +42,7 @@ local npc_restrict_start  = {}   -- id → timestamp when restrictions were firs
 local npc_restrict_cooldown = {} -- id → timestamp until re-restriction is suppressed
 local npc_smart_bolts     = {}   -- id → {name=, since=} for NPCs MAI has set_enable_anomalies_pathfinding(true) on
 local npc_sb_exhausted    = {}   -- id → true while NPC must stay off Smart Bolts until anomalies fully clear
+local npc_known_anomalies = {}   -- id → {[anom_name] = {last_seen=ms}} anomalies remembered by this NPC
 
 local ANOMALY_ATTRIBUTION_TIMEOUT = 5000
 -- Hard cap on simultaneous restriction zones per NPC. Too many overlapping
@@ -666,6 +667,25 @@ local function update_npc_restrictions(npc, detection_radius)
         end
         -- Area is clear: NPC may re-enter Smart Bolts mode next time it approaches anomalies.
         npc_sb_exhausted[id] = nil
+
+        -- Decay anomaly memory while NPC is away from all anomaly fields.
+        local mem_decay_ms = get_mcm_setting("anomaly_memory_decay", 30) * 1000
+        if mem_decay_ms > 0 and npc_known_anomalies[id] then
+            local known = npc_known_anomalies[id]
+            local cache_by_name = {}
+            for _, c in ipairs(anomaly_cache) do cache_by_name[c.name] = c.pos end
+            for anom_name, mem in pairs(known) do
+                local c_pos = cache_by_name[anom_name]
+                if not c_pos then
+                    known[anom_name] = nil
+                elseif npc_pos:distance_to(c_pos) > 2 * radius
+                        and (current_time - mem.last_seen) > mem_decay_ms then
+                    known[anom_name] = nil
+                end
+            end
+            if next(known) == nil then npc_known_anomalies[id] = nil end
+        end
+
         safe_call(npc.set_enable_anomalies_pathfinding, npc, false)
         return
     end
@@ -756,6 +776,56 @@ local function update_npc_restrictions(npc, detection_radius)
 
         if #detected >= MAX_RESTRICTIONS_PER_NPC then
             break
+        end
+    end
+
+    -- Anomaly memory: union fresh detections with previously-seen anomalies that
+    -- are still within 2× detection radius. Known anomalies bypass the miss roll,
+    -- so a failed RNG on a later tick doesn't un-restrict a field the NPC already saw.
+    local mem_decay_ms = get_mcm_setting("anomaly_memory_decay", 30) * 1000
+    if mem_decay_ms > 0 then
+        npc_known_anomalies[id] = npc_known_anomalies[id] or {}
+        local known = npc_known_anomalies[id]
+        local cache_by_name = {}
+        for _, c in ipairs(anomaly_cache) do cache_by_name[c.name] = c.pos end
+
+        -- Add remembered anomalies not caught by this detection roll (up to cap).
+        for anom_name, mem in pairs(known) do
+            if #detected >= MAX_RESTRICTIONS_PER_NPC then break end
+            local c_pos = cache_by_name[anom_name]
+            if not c_pos then
+                known[anom_name] = nil
+            else
+                local dist = npc_pos:distance_to(c_pos)
+                if dist <= 2 * radius and dist >= MIN_RESTRICT_DISTANCE then
+                    local already = false
+                    for _, n in ipairs(detected) do
+                        if n == anom_name then already = true; break end
+                    end
+                    if not already then
+                        tinsert(detected, anom_name)
+                        dbg_verbose("MEMORY", "[%s] recalled [%s] (%.1fm)",
+                            npc:name() or "?", anom_name, dist)
+                    end
+                end
+            end
+        end
+
+        -- Record all newly detected anomalies into memory.
+        for _, anom_name in ipairs(detected) do
+            known[anom_name] = { last_seen = current_time }
+        end
+
+        -- Decay: forget anomalies that are far away and stale.
+        for anom_name, mem in pairs(known) do
+            local c_pos = cache_by_name[anom_name]
+            if not c_pos then
+                known[anom_name] = nil
+            elseif npc_pos:distance_to(c_pos) > 2 * radius
+                    and (current_time - mem.last_seen) > mem_decay_ms then
+                known[anom_name] = nil
+                dbg_verbose("MEMORY", "[%s] forgot [%s]", npc:name() or "?", anom_name)
+            end
         end
     end
 
@@ -1269,6 +1339,7 @@ local function on_game_load()
     npc_restrict_start   = {}
     npc_restrict_cooldown = {}
     npc_sb_exhausted     = {}
+    npc_known_anomalies  = {}
     anomaly_protection_cache = {}
     pcall_failures_seen  = {}
 
@@ -1288,6 +1359,7 @@ local function on_level_changed()
     npc_restrict_cooldown = {}
     npc_smart_bolts      = {}
     npc_sb_exhausted     = {}
+    npc_known_anomalies  = {}
     pcall_failures_seen  = {}
 
     -- The actor_on_first_update hook will re-arm the timer on the new level via on_game_load.
@@ -1317,6 +1389,7 @@ local function on_npc_net_destroy(npc)
     npc_restrict_cooldown[id] = nil
     npc_smart_bolts[id]       = nil
     npc_sb_exhausted[id]      = nil
+    npc_known_anomalies[id]   = nil
 end
 
 local function on_npc_net_spawn(npc)

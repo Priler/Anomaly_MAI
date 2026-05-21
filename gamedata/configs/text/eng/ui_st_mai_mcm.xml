@@ -96,7 +96,14 @@
     <string id="ui_mcm_mai_restrictions_ignore_radius_desc">
         <text>If enabled, all NPCs avoid anomalies regardless of distance. If disabled, only NPCs within effect radius get restrictions.</text>
     </string>
-    
+
+    <string id="ui_mcm_mai_anomaly_memory_decay">
+        <text>Anomaly Memory (s)</text>
+    </string>
+    <string id="ui_mcm_mai_anomaly_memory_decay_desc">
+        <text>How long an NPC remembers a detected anomaly after leaving the area. Remembered anomalies bypass the miss roll, so avoidance stays reliable. Set to 0 to disable memory entirely. Default: 30s</text>
+    </string>
+
     <!-- ### Damage Settings ### -->
     
     <string id="ui_mcm_mai_enable_armor_damage_mult">
