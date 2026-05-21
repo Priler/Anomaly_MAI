@@ -256,6 +256,13 @@
         <text>Seconds an NPC can have path restrictions continuously active before stuck recovery triggers. Clears restrictions and gives a 6s grace period to move freely. Default: 8</text>
     </string>
 
+    <string id="ui_mcm_mai_force_through_enabled">
+        <text>Force-Through When Stuck</text>
+    </string>
+    <string id="ui_mcm_mai_force_through_enabled_desc">
+        <text>After 3 consecutive stuck timeouts, suspend all MAI restrictions for 20s so the NPC can cross the field. Engine-native anomaly damage still applies during this window. Disable to cap recovery at the 15s cooldown instead. Default: ON</text>
+    </string>
+
     <!-- ### Community Exclusions ### -->
 
     <string id="ui_mcm_mai_community_excl_title">

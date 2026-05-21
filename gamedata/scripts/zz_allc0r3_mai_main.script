@@ -43,6 +43,8 @@ local npc_restrict_cooldown = {} -- id → timestamp until re-restriction is sup
 local npc_smart_bolts     = {}   -- id → {name=, since=} for NPCs MAI has set_enable_anomalies_pathfinding(true) on
 local npc_sb_exhausted    = {}   -- id → true while NPC must stay off Smart Bolts until anomalies fully clear
 local npc_known_anomalies = {}   -- id → {[anom_name] = {last_seen=ms}} anomalies remembered by this NPC
+local npc_stuck_count    = {}   -- id → consecutive stuck-trigger count; resets when NPC escapes the field
+local npc_force_through  = {}   -- id → expire_time_ms; NPC is exempt from MAI restrictions during this window
 
 local ANOMALY_ATTRIBUTION_TIMEOUT = 5000
 -- Hard cap on simultaneous restriction zones per NPC. Too many overlapping
@@ -650,6 +652,23 @@ local function update_npc_restrictions(npc, detection_radius)
         end
     end
 
+    -- Force-through: NPC is exempt from all MAI restrictions to escape a trapped position.
+    -- Engine-native anomaly damage still applies during this window.
+    if npc_force_through[id] then
+        if current_time < npc_force_through[id] then
+            if npc_restrictions[id] then clear_npc_restrictions(npc) end
+            if npc_smart_bolts[id] then
+                npc_smart_bolts[id] = nil
+            end
+            safe_call(npc.set_enable_anomalies_pathfinding, npc, false)
+            return
+        else
+            npc_force_through[id] = nil
+            npc_stuck_count[id]   = nil
+            diag_log("FORCE_THROUGH", "[%s] force-through expired, resuming normal avoidance", npc:name() or "?")
+        end
+    end
+
     local npc_pos = get_position_copy(npc)
     if not npc_pos then return end
 
@@ -667,6 +686,7 @@ local function update_npc_restrictions(npc, detection_radius)
         end
         -- Area is clear: NPC may re-enter Smart Bolts mode next time it approaches anomalies.
         npc_sb_exhausted[id] = nil
+        npc_stuck_count[id]  = nil
 
         -- Decay anomaly memory while NPC is away from all anomaly fields.
         local mem_decay_ms = get_mcm_setting("anomaly_memory_decay", 30) * 1000
@@ -830,13 +850,28 @@ local function update_npc_restrictions(npc, detection_radius)
     end
 
     if #detected > 0 then
-        -- Stuck detection: if restrictions have been continuously active too long, give NPC a grace period
+        -- Stuck detection: escalate response for NPCs that keep re-triggering the timeout.
+        -- count=1: 6s cooldown (first incident).
+        -- count=2: 15s cooldown + warning (second consecutive without escaping field).
+        -- count≥3: 20s force-through — restrictions suspended so NPC can cross the field.
         local stuck_ms = get_mcm_setting("npc_stuck_timeout", 8) * 1000
         if npc_restrict_start[id] and (current_time - npc_restrict_start[id]) > stuck_ms then
+            npc_stuck_count[id] = (npc_stuck_count[id] or 0) + 1
+            local count = npc_stuck_count[id]
             clear_npc_restrictions(npc)
-            npc_restrict_start[id]    = nil
-            npc_restrict_cooldown[id] = current_time + 6000
-            dbg_log("STUCK", "[%s] stuck timeout - cleared restrictions (6s cooldown)", npc:name() or "?")
+            npc_restrict_start[id] = nil
+
+            if count >= 3 and get_mcm_setting("force_through_enabled", true) then
+                npc_force_through[id] = current_time + 20000
+                npc_stuck_count[id]   = nil
+                diag_log("FORCE_THROUGH", "[%s] stuck x%d - suspending MAI restrictions for 20s", npc:name() or "?", count)
+            elseif count >= 2 then
+                npc_restrict_cooldown[id] = current_time + 15000
+                diag_log("STUCK", "[%s] stuck x%d - cleared restrictions (15s cooldown)", npc:name() or "?", count)
+            else
+                npc_restrict_cooldown[id] = current_time + 6000
+                dbg_log("STUCK", "[%s] stuck timeout - cleared restrictions (6s cooldown)", npc:name() or "?")
+            end
             return
         end
 
@@ -1340,6 +1375,8 @@ local function on_game_load()
     npc_restrict_cooldown = {}
     npc_sb_exhausted     = {}
     npc_known_anomalies  = {}
+    npc_stuck_count      = {}
+    npc_force_through    = {}
     anomaly_protection_cache = {}
     pcall_failures_seen  = {}
 
@@ -1360,6 +1397,8 @@ local function on_level_changed()
     npc_smart_bolts      = {}
     npc_sb_exhausted     = {}
     npc_known_anomalies  = {}
+    npc_stuck_count      = {}
+    npc_force_through    = {}
     pcall_failures_seen  = {}
 
     -- The actor_on_first_update hook will re-arm the timer on the new level via on_game_load.
@@ -1390,6 +1429,8 @@ local function on_npc_net_destroy(npc)
     npc_smart_bolts[id]       = nil
     npc_sb_exhausted[id]      = nil
     npc_known_anomalies[id]   = nil
+    npc_stuck_count[id]       = nil
+    npc_force_through[id]     = nil
 end
 
 local function on_npc_net_spawn(npc)
