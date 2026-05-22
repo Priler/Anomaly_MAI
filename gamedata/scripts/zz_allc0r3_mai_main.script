@@ -495,13 +495,13 @@ local RANK_MCM_KEYS = {
 }
 
 local RANK_DEFAULTS = {
-    ["novice"] = 100,
+    ["novice"] = 90,
     ["trainee"] = 75,
     ["experienced"] = 50,
     ["professional"] = 25,
-    ["veteran"] = 0,
-    ["expert"] = 0,
-    ["master"] = 0,
+    ["veteran"] = 15,
+    ["expert"] = 10,
+    ["master"] = 5,
     ["legend"] = 0
 }
 

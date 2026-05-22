@@ -170,7 +170,7 @@
         <text>Novice</text>
     </string>
     <string id="ui_mcm_mai_rank_novice_miss_chance_desc">
-        <text>Base miss chance for Novice stalkers. 100% = always might walk into anomalies. Default: 100%</text>
+        <text>Base miss chance for Novice stalkers. Higher = more likely to walk into anomalies. Default: 90%</text>
     </string>
     
     <string id="ui_mcm_mai_rank_trainee_miss_chance">
@@ -198,21 +198,21 @@
         <text>Veteran</text>
     </string>
     <string id="ui_mcm_mai_rank_veteran_miss_chance_desc">
-        <text>Base miss chance for Veteran stalkers. 0% = never walks into anomalies. Default: 0%</text>
+        <text>Base miss chance for Veteran stalkers. 0% = never walks into anomalies. Default: 15%</text>
     </string>
     
     <string id="ui_mcm_mai_rank_expert_miss_chance">
         <text>Expert</text>
     </string>
     <string id="ui_mcm_mai_rank_expert_miss_chance_desc">
-        <text>Base miss chance for Expert stalkers. Default: 0%</text>
+        <text>Base miss chance for Expert stalkers. Default: 10%</text>
     </string>
     
     <string id="ui_mcm_mai_rank_master_miss_chance">
         <text>Master</text>
     </string>
     <string id="ui_mcm_mai_rank_master_miss_chance_desc">
-        <text>Base miss chance for Master stalkers. Default: 0%</text>
+        <text>Base miss chance for Master stalkers. Default: 5%</text>
     </string>
     
     <string id="ui_mcm_mai_rank_legend_miss_chance">

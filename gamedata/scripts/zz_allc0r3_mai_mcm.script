@@ -35,13 +35,13 @@ local defaults = {
     combat_miss_multiplier = 3.0,
     
     -- ranks
-    rank_novice_miss_chance = 100,
+    rank_novice_miss_chance = 90,
     rank_trainee_miss_chance = 75,
     rank_experienced_miss_chance = 50,
     rank_professional_miss_chance = 25,
-    rank_veteran_miss_chance = 0,
-    rank_expert_miss_chance = 0,
-    rank_master_miss_chance = 0,
+    rank_veteran_miss_chance = 15,
+    rank_expert_miss_chance = 10,
+    rank_master_miss_chance = 5,
     rank_legend_miss_chance = 0,
 
     -- community exclusions (defaults match the previously hardcoded npc_settings tables)
@@ -135,13 +135,13 @@ function on_mcm_load()
             -- rank miss chance
             { id = "rank_title", type = "title", text = "ui_mcm_mai_rank_title" },
             
-            { id = "rank_novice_miss_chance",       type = "track", val = 2, min = 0, max = 100, step = 5, def = 100 },
+            { id = "rank_novice_miss_chance",       type = "track", val = 2, min = 0, max = 100, step = 5, def = 90 },
             { id = "rank_trainee_miss_chance",      type = "track", val = 2, min = 0, max = 100, step = 5, def = 75 },
             { id = "rank_experienced_miss_chance",  type = "track", val = 2, min = 0, max = 100, step = 5, def = 50 },
             { id = "rank_professional_miss_chance", type = "track", val = 2, min = 0, max = 100, step = 5, def = 25 },
-            { id = "rank_veteran_miss_chance",      type = "track", val = 2, min = 0, max = 100, step = 5, def = 0 },
-            { id = "rank_expert_miss_chance",       type = "track", val = 2, min = 0, max = 100, step = 5, def = 0 },
-            { id = "rank_master_miss_chance",       type = "track", val = 2, min = 0, max = 100, step = 5, def = 0 },
+            { id = "rank_veteran_miss_chance",      type = "track", val = 2, min = 0, max = 100, step = 5, def = 15 },
+            { id = "rank_expert_miss_chance",       type = "track", val = 2, min = 0, max = 100, step = 5, def = 10 },
+            { id = "rank_master_miss_chance",       type = "track", val = 2, min = 0, max = 100, step = 5, def = 5 },
             { id = "rank_legend_miss_chance",       type = "track", val = 2, min = 0, max = 100, step = 5, def = 0 },
 
             { id = "line_5", type = "line" },
