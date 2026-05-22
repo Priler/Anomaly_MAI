@@ -19,13 +19,9 @@ local defaults = {
     restrictions_ignore_radius = true,
     anomaly_memory_decay = 30,
 
-    -- pathfinding
-    smart_bolts_enabled = true,
-    smart_bolt_min_count = 3,
-    smart_bolt_max_duration = 5,
-    npc_stuck_timeout = 8,
-    force_through_enabled = true,
-    
+    -- avoidance
+    npc_stuck_timeout = 20,
+
     -- damage
     enable_armor_damage_mult = true,
     immune_zero_miss_chance = true,
@@ -109,14 +105,10 @@ function on_mcm_load()
 
             { id = "line_2", type = "line" },
 
-            -- pathfinding
+            -- avoidance
             { id = "pathfinding_title", type = "title", text = "ui_mcm_mai_pathfinding_title" },
 
-            { id = "smart_bolts_enabled",    type = "check", val = 1, def = true },
-            { id = "smart_bolt_min_count",   type = "track", val = 2, min = 1, max = 8, step = 1, def = 3 },
-            { id = "smart_bolt_max_duration", type = "track", val = 2, min = 2, max = 30, step = 1, def = 5 },
-            { id = "npc_stuck_timeout",      type = "track", val = 2, min = 3, max = 20, step = 1, def = 8 },
-            { id = "force_through_enabled",  type = "check", val = 1, def = true },
+            { id = "npc_stuck_timeout",      type = "track", val = 2, min = 3, max = 60, step = 1, def = 20 },
 
             { id = "line_2b", type = "line" },
 

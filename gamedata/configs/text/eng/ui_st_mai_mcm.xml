@@ -222,45 +222,17 @@
         <text>Base miss chance for Legend stalkers. Default: 0%</text>
     </string>
 
-    <!-- ### Pathfinding Settings ### -->
+    <!-- ### Avoidance Settings ### -->
 
     <string id="ui_mcm_mai_pathfinding_title">
-        <text>Pathfinding Settings</text>
-    </string>
-
-    <string id="ui_mcm_mai_smart_bolts_enabled">
-        <text>Enable Smart Bolts</text>
-    </string>
-    <string id="ui_mcm_mai_smart_bolts_enabled_desc">
-        <text>Allow NPCs to use engine bolt-throwing for anomaly detection in dense fields. Disable to use script restrictions only (no bolts thrown). Default: ON</text>
-    </string>
-
-    <string id="ui_mcm_mai_smart_bolt_min_count">
-        <text>Smart Bolt Threshold</text>
-    </string>
-    <string id="ui_mcm_mai_smart_bolt_min_count_desc">
-        <text>Minimum nearby anomalies before NPCs use engine bolt-throwing to probe the field. In combat, bolt-throwing is always disabled. Default: 3</text>
-    </string>
-
-    <string id="ui_mcm_mai_smart_bolt_max_duration">
-        <text>Smart Bolt Max Duration (s)</text>
-    </string>
-    <string id="ui_mcm_mai_smart_bolt_max_duration_desc">
-        <text>Maximum seconds an NPC stays in bolt-throwing mode per encounter. Caps bolt accumulation and prevents NPCs from looping in Smart Bolts indefinitely. NPC switches to script restrictions until fully clear of anomalies, then Smart Bolts re-arms. Default: 5s</text>
+        <text>Avoidance Settings</text>
     </string>
 
     <string id="ui_mcm_mai_npc_stuck_timeout">
         <text>Stuck Timeout (s)</text>
     </string>
     <string id="ui_mcm_mai_npc_stuck_timeout_desc">
-        <text>Seconds an NPC can have path restrictions continuously active before stuck recovery triggers. Clears restrictions and gives a 6s grace period to move freely. Default: 8</text>
-    </string>
-
-    <string id="ui_mcm_mai_force_through_enabled">
-        <text>Force-Through When Stuck</text>
-    </string>
-    <string id="ui_mcm_mai_force_through_enabled_desc">
-        <text>After 3 consecutive stuck timeouts, suspend all MAI restrictions for 20s so the NPC can cross the field. Engine-native anomaly damage still applies during this window. Disable to cap recovery at the 15s cooldown instead. Default: ON</text>
+        <text>Seconds an NPC can try to avoid a field without making progress before it commits to sprinting straight through (taking damage). Setting this too low short-circuits the bolt-throwing / route-planning phase, making NPCs sprint off prematurely. Default: 20</text>
     </string>
 
     <!-- ### Community Exclusions ### -->
