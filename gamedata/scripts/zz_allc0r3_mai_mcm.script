@@ -20,7 +20,10 @@ local defaults = {
     anomaly_memory_decay = 30,
 
     -- avoidance
-    npc_stuck_timeout = 20,
+    npc_stuck_timeout = 40,
+    enable_probe = true,
+    probe_isolation_radius = 6,
+    probe_duration = 8,
 
     -- damage
     enable_armor_damage_mult = true,
@@ -108,7 +111,10 @@ function on_mcm_load()
             -- avoidance
             { id = "pathfinding_title", type = "title", text = "ui_mcm_mai_pathfinding_title" },
 
-            { id = "npc_stuck_timeout",      type = "track", val = 2, min = 3, max = 60, step = 1, def = 20 },
+            { id = "npc_stuck_timeout",      type = "track", val = 2, min = 4, max = 120, step = 1, def = 40 },
+            { id = "enable_probe",           type = "check", val = 1, def = true },
+            { id = "probe_isolation_radius", type = "track", val = 2, min = 1, max = 30, step = 1, def = 10 },
+            { id = "probe_duration",         type = "track", val = 2, min = 4, max = 20, step = 1, def = 8 },
 
             { id = "line_2b", type = "line" },
 

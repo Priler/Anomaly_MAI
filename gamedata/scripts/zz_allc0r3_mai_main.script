@@ -37,7 +37,8 @@ local debug_anomalies_shown = false
 
 -- Per-NPC state. All fields are optional; the table entry is created on first access and
 -- deleted on net_destroy. Fields: last_update, last_anomaly, known_anomalies,
--- avoiding, avoid_start, last_vid, push_through, pre_push_run.
+-- restrictions, restrict_start, restrict_anchor_pos, push_through, pre_push_run,
+-- feel_on, probed, probe_until, took_damage.
 local npc_state = {}
 
 local ANOMALY_ATTRIBUTION_TIMEOUT = 5000
@@ -48,6 +49,11 @@ local MAX_RESTRICTIONS_PER_NPC = 3
 -- can't usefully route around it, so it isn't treated as a fresh detection -- the
 -- push-through path handles getting it out instead.
 local MIN_RESTRICT_DISTANCE = 4
+-- Net distance (meters) an avoiding NPC must travel from where it started routing
+-- around before it counts as having made progress. Measured as straight-line
+-- displacement, not path length, so an NPC walking in circles (lots of motion, no
+-- net displacement) never clears this and trips the stuck timer.
+local STUCK_PROGRESS_DIST = 8
 
 local pcall_failures_seen = {}
 
@@ -228,36 +234,42 @@ local function rebuild_anomaly_cache()
     
     local count = 0
     local skipped = 0
+    local skip_reasons = { always_skip = 0, arrival_inactive = 0, dyn_disabled = 0, no_pos = 0, no_name = 0 }
     local arrival_loaded_now = is_arrival_loaded()
     local dyn_anomalies = bind_anomaly_field.dyn_anomalies
     local dyn_anomalies_level = dyn_anomalies and dyn_anomalies[lvl_name]
-    
+
     for _, v in pairs(fields) do
         local anom_obj = v and v.object
         if anom_obj then
             local anom_id = safe_call(anom_obj.id, anom_obj)
             if anom_id and anom_id ~= 65535 then
                 local se_obj = alife_object(anom_id)
-                
+
                 if se_obj then
                     local anom_name = safe_call(se_obj.name, se_obj)
-                    
-                    if not anom_name or is_always_skip_anomaly(anom_name) then
-                        skipped = skipped + 1
+                    local skip_reason = nil
+
+                    if not anom_name then
+                        skip_reason = "no_name"
+                    elseif is_always_skip_anomaly(anom_name) then
+                        skip_reason = "always_skip"
                     else
                         local is_active = true
-                        
+
                         if arrival_loaded_now then
                             is_active = is_arrival_anomaly_active(anom_id, lvl_name)
+                            if not is_active then skip_reason = "arrival_inactive" end
                         end
-                        
+
                         if is_active and dyn_anomalies_level then
                             local dyn_state = dyn_anomalies_level[anom_id]
                             if dyn_state == false then
                                 is_active = false
+                                skip_reason = "dyn_disabled"
                             end
                         end
-                        
+
                         if is_active then
                             local pos = safe_call(anom_obj.position, anom_obj)
                             if pos and pos.x and pos.y and pos.z then
@@ -270,19 +282,27 @@ local function rebuild_anomaly_cache()
                                 })
                                 count = count + 1
                             else
-                                skipped = skipped + 1
+                                skip_reason = "no_pos"
                             end
-                        else
-                            skipped = skipped + 1
                         end
+                    end
+
+                    if skip_reason then
+                        skipped = skipped + 1
+                        skip_reasons[skip_reason] = (skip_reasons[skip_reason] or 0) + 1
+                        dbg_verbose("CACHE", "skip [%s] id=%s reason=%s",
+                            anom_name or "?", tostring(anom_id), skip_reason)
                     end
                 end
             end
         end
     end
-    
+
     cache_valid = true
-    dbg_log("CACHE", "Rebuilt: %d anomalies on %s (skipped %d)", count, lvl_name, skipped)
+    dbg_log("CACHE", "Rebuilt: %d anomalies on %s (skipped %d: arrival=%d dyn=%d always=%d nopos=%d noname=%d)",
+        count, lvl_name, skipped,
+        skip_reasons.arrival_inactive, skip_reasons.dyn_disabled,
+        skip_reasons.always_skip, skip_reasons.no_pos, skip_reasons.no_name)
 end
 
 local function invalidate_cache()
@@ -474,7 +494,7 @@ local function configure_npc_anomaly_interaction(npc)
     
     local should_damage, reason = should_enable_anomaly_damage(npc)
     safe_call(npc.set_enable_anomalies_damage, npc, should_damage)
-    safe_call(npc.set_enable_anomalies_pathfinding, npc, false)
+    -- Anomaly-feel (pathfinding) flag is owned by update_npc_restrictions / set_npc_feel.
 
     dbg_verbose("CONFIG", "NPC [%s] damage=%s (%s)",
         npc:name() or "?", tostring(should_damage), reason)
@@ -566,17 +586,23 @@ end
 
 local function get_nearby_anomalies(npc_pos, radius)
     if not npc_pos then return {} end
-    local result = {}
-    
+    local found = {}
+
     for _, anom in ipairs(anomaly_cache) do
         if anom.pos then
             local dist = npc_pos:distance_to(anom.pos)
             if dist <= radius then
-                tinsert(result, anom)
+                tinsert(found, { anom = anom, dist = dist })
             end
         end
     end
-    
+
+    -- Closest first, so the MAX_RESTRICTIONS_PER_NPC cap spends its budget on the nearest
+    -- (most imminent) threats instead of whatever happened to come first in cache order.
+    table.sort(found, function(a, b) return a.dist < b.dist end)
+
+    local result = {}
+    for i = 1, #found do result[i] = found[i].anom end
     return result
 end
 
@@ -602,6 +628,62 @@ end
 
 -- [ Anomaly Avoidance ]--
 
+local function clear_npc_restrictions(npc)
+    if not is_valid_object(npc) then return end
+    local current = safe_call(npc.in_restrictions, npc) or ""
+    if current ~= "" then
+        safe_call(npc.remove_restrictions, npc, "", current)
+        dbg_verbose("RESTRICT", "Cleared restrictions for [%s]", npc:name() or "?")
+    end
+    local st = npc_state[npc:id()]
+    if st then st.restrictions = nil end
+end
+
+-- Per-tick snapshot of online stalker positions, rebuilt at the top of each periodic
+-- tick. Lets the probe elect a cluster tester without per-NPC engine spatial queries.
+local tick_npc_positions = {}
+
+-- Elect a single bolt-prober per local cluster: an NPC is the tester only if no
+-- lower-id stalker sits within `radius` of it. A lone NPC always qualifies; in a crowd
+-- exactly one (the lowest id) does. Because any two testers must each be the lowest in
+-- their own neighborhood, electeds are always >`radius` apart -- so feelers never share
+-- a field, which is what kept the multi-feeler contention freeze at bay.
+local function is_cluster_tester(self_id, self_pos, radius)
+    for i = 1, #tick_npc_positions do
+        local e = tick_npc_positions[i]
+        if e.id < self_id and self_pos:distance_to(e.pos) <= radius then
+            return false
+        end
+    end
+    return true
+end
+
+-- Set the per-NPC engine anomaly-feel flag, deduped via st.feel_on so we don't spam the
+-- engine each tick. ON = NPC throws bolts and the engine routes it out; OFF = pure
+-- restriction routing. Owned solely here so configure_npc_anomaly_interaction can't stomp
+-- an active probe between this function's throttled runs.
+local function set_npc_feel(npc, st, on)
+    if st.feel_on == on then return end
+    safe_call(npc.set_enable_anomalies_pathfinding, npc, on)
+    st.feel_on = on
+end
+
+-- Commit an NPC to sprinting straight through a field (it can't route around, or got hit
+-- and is fleeing). Drops restrictions and feel so the engine can't box it in, then runs.
+local function commit_push_through(npc, st, reason)
+    st.pre_push_run        = (safe_call(npc.movement_type, npc) == move.run)
+    st.push_through        = true
+    st.restrictions        = nil
+    st.restrict_start      = nil
+    st.restrict_anchor_pos = nil
+    st.probed              = nil
+    st.probe_until         = nil
+    set_npc_feel(npc, st, false)
+    clear_npc_restrictions(npc)
+    dbg_log("PUSH_THROUGH", "[%s] sprinting through (%s)", npc:name() or "?", reason)
+    safe_call(npc.set_movement_type, npc, move.run)
+end
+
 local function update_npc_restrictions(npc, detection_radius)
     if not should_add_restrictions(npc) then return end
     if not is_valid_stalker(npc) then return end
@@ -623,17 +705,18 @@ local function update_npc_restrictions(npc, detection_radius)
     local nearby = get_nearby_anomalies(npc_pos, radius)
 
     if #nearby == 0 then
-        if st.avoiding or st.push_through then
-            safe_call(npc.set_enable_anomalies_pathfinding, npc, false)
-        end
+        if st.restrictions then clear_npc_restrictions(npc) end
+        set_npc_feel(npc, st, false)
         if st.push_through and not st.pre_push_run then
             safe_call(npc.set_movement_type, npc, move.walk)
         end
-        st.avoiding     = nil
-        st.avoid_start  = nil
-        st.last_vid     = nil
-        st.push_through = nil
-        st.pre_push_run = nil
+        st.restrict_start      = nil
+        st.restrict_anchor_pos = nil
+        st.push_through        = nil
+        st.pre_push_run        = nil
+        st.probed              = nil
+        st.probe_until         = nil
+        st.took_damage         = nil
 
         -- Decay anomaly memory while NPC is away from all anomaly fields.
         local mem_decay_ms = get_mcm_setting("anomaly_memory_decay", 30) * 1000
@@ -655,11 +738,22 @@ local function update_npc_restrictions(npc, detection_radius)
         return
     end
 
-    -- Push-through: the NPC has committed to crossing. Ignore anomalies (so it doesn't
-    -- freeze trying to route around) and sprint, until it clears the field (reset above).
+    -- Push-through: the NPC has committed to crossing. Drop restrictions (so it isn't
+    -- boxed in) and sprint, until it clears the field (reset above).
     if st.push_through then
-        safe_call(npc.set_enable_anomalies_pathfinding, npc, false)
+        if st.restrictions then clear_npc_restrictions(npc) end
+        set_npc_feel(npc, st, false)
         safe_call(npc.set_movement_type, npc, move.run)
+        return
+    end
+
+    -- In contact: took an anomaly hit since the last update. Don't probe or route -- you
+    -- don't throw bolts while burning. Commit to sprinting out. A boolean (cleared on
+    -- read) rather than a time window, so bursty/intermittent anomaly damage can't slip
+    -- through between the ~2s update ticks.
+    if st.took_damage then
+        st.took_damage = nil
+        commit_push_through(npc, st, "in contact")
         return
     end
 
@@ -754,39 +848,69 @@ local function update_npc_restrictions(npc, detection_radius)
     end
 
     if #detected > 0 then
-        -- Noticed an anomaly: avoid it via the engine's feel-based routing (which also
-        -- throws test bolts). Works on Arrival's rt=0 zones, unlike space restrictions.
-        safe_call(npc.set_enable_anomalies_pathfinding, npc, true)
-        st.avoiding = true
+        -- Probe phase: the cluster's elected tester tests an unfamiliar field with bolts
+        -- before committing. The engine's feel handles the bolt-throwing and routing it
+        -- out, so we add NO script restrictions during the probe (stacking ours on the
+        -- engine's own restrictions risks boxing the NPC in -> CTD). Only one NPC per
+        -- cluster feels at a time (leader election) so feelers never contend in one field.
+        local probe_enabled = get_mcm_setting("enable_probe", true)
+        if probe_enabled and not st.probed then
+            local iso_radius = get_mcm_setting("probe_isolation_radius", 15)
+            if is_cluster_tester(id, npc_pos, iso_radius) then
+                if st.restrictions then clear_npc_restrictions(npc) end
+                set_npc_feel(npc, st, true)
+                if not st.probe_until then
+                    local probe_ms = get_mcm_setting("probe_duration", 5) * 1000
+                    st.probe_until = current_time + probe_ms
+                    dbg_log("PROBE", "[%s] probing field with bolts (cluster tester)", npc:name() or "?")
+                end
+                if current_time < st.probe_until then
+                    return  -- still probing; let the engine's bolt/route-out play out
+                end
+                -- Window elapsed: stop feeling, hand off to silent restriction routing.
+                set_npc_feel(npc, st, false)
+                st.probed      = true
+                st.probe_until = nil
+                dbg_verbose("PROBE", "[%s] probe done - routing around", npc:name() or "?")
+            elseif st.feel_on then
+                -- A lower-id NPC entered the cluster and is now the tester; yield the feel.
+                set_npc_feel(npc, st, false)
+                st.probed      = true
+                st.probe_until = nil
+                dbg_log("PROBE", "[%s] probe yielded (another NPC is cluster tester)", npc:name() or "?")
+            end
+        end
 
-        -- Track progress by level vertex. While the NPC keeps moving, reset the stall
-        -- timer; if it sits on the same vertex (can't route around) past the timeout,
-        -- it needs through -- commit to sprinting across.
-        local vid = safe_call(npc.level_vertex_id, npc)
-        if st.last_vid ~= vid then
-            st.last_vid    = vid
-            st.avoid_start = current_time
+        -- Restrict: route around silently. No feel, no bolts.
+        set_npc_feel(npc, st, false)
+        clear_npc_restrictions(npc)
+        safe_call(npc.add_restrictions, npc, "", tconcat(detected, ","))
+        st.restrictions = detected
+
+        -- Displacement-based progress: re-anchor and reset the stall timer whenever the
+        -- NPC covers STUCK_PROGRESS_DIST of net ground. An NPC walking in circles changes
+        -- vertex constantly but never gets far from its anchor, so it trips the timeout
+        -- and commits to sprinting through.
+        if not st.restrict_anchor_pos or not st.restrict_start then
+            st.restrict_anchor_pos = npc_pos
+            st.restrict_start      = current_time
+        elseif npc_pos:distance_to(st.restrict_anchor_pos) >= STUCK_PROGRESS_DIST then
+            st.restrict_anchor_pos = npc_pos
+            st.restrict_start      = current_time
         end
 
         local stuck_ms = get_mcm_setting("npc_stuck_timeout", 20) * 1000
-        if st.avoid_start and (current_time - st.avoid_start) > stuck_ms then
-            -- Remember whether the NPC was already running, so we can drop it back to
-            -- a walk once it's clear (rather than leaving it sprinting indefinitely).
-            st.pre_push_run = (safe_call(npc.movement_type, npc) == move.run)
-            st.push_through = true
-            st.avoiding     = nil
-            st.avoid_start  = nil
-            st.last_vid     = nil
-            dbg_log("PUSH_THROUGH", "[%s] stuck avoiding - sprinting through", npc:name() or "?")
-            safe_call(npc.set_enable_anomalies_pathfinding, npc, false)
-            safe_call(npc.set_movement_type, npc, move.run)
+        if (current_time - st.restrict_start) > stuck_ms then
+            commit_push_through(npc, st, "stuck routing around")
+        else
+            dbg_verbose("RESTRICT", "[%s] added %d restrictions", npc:name() or "?", #detected)
         end
     else
-        -- Failed the rank roll: didn't notice. Walk through and take the hit.
-        safe_call(npc.set_enable_anomalies_pathfinding, npc, false)
-        st.avoiding    = nil
-        st.avoid_start = nil
-        st.last_vid    = nil
+        -- Failed the rank roll: didn't notice. Clear restrictions/feel and walk through.
+        set_npc_feel(npc, st, false)
+        clear_npc_restrictions(npc)
+        st.restrict_start      = nil
+        st.restrict_anchor_pos = nil
     end
 end
 
@@ -839,6 +963,7 @@ local function on_anomaly_before_activate(zone, obj, flags)
     
     local st = npc_state[obj_id]
     if not st then st = {}; npc_state[obj_id] = st end
+    st.took_damage = true
     st.last_anomaly = {
         name = zone_name,
         section = zone_section,
@@ -1083,9 +1208,24 @@ local function mai_periodic_tick()
     local actor_pos = get_position_copy(db.actor)
     
     if not actor_pos then return end
-    
+
+    -- Snapshot online stalker positions for the probe's tester election
+    -- (is_cluster_tester). Rebuilt each tick so it reflects current positions.
+    local snap = {}
+    for _, sval in pairs(db.OnlineStalkers or {}) do
+        local sobj = sval
+        if type(sobj) == "number" then sobj = level.object_by_id(sobj) end
+        if is_valid_stalker(sobj) then
+            local p = get_position_copy(sobj)
+            -- db.OnlineStalkers is an index-keyed array, so the table key is NOT the id;
+            -- store the real object id or the id comparison in is_cluster_tester breaks.
+            if p then snap[#snap + 1] = { id = safe_call(sobj.id, sobj), pos = p } end
+        end
+    end
+    tick_npc_positions = snap
+
     local processed = 0
-    
+
     for id, npc in pairs(db.OnlineStalkers or {}) do
         if type(npc) == "number" then
             npc = level.object_by_id(npc)
@@ -1103,16 +1243,18 @@ local function mai_periodic_tick()
                     safe_call(npc.set_enable_anomalies_damage, npc, false)
                     local st = npc_state[id]
                     if st then
+                        if st.restrictions then clear_npc_restrictions(npc) end
+                        set_npc_feel(npc, st, false)
                         if st.push_through and not st.pre_push_run then
                             safe_call(npc.set_movement_type, npc, move.walk)
                         end
-                        st.avoiding     = nil
-                        st.avoid_start  = nil
-                        st.last_vid     = nil
-                        st.push_through = nil
-                        st.pre_push_run = nil
+                        st.restrict_start      = nil
+                        st.restrict_anchor_pos = nil
+                        st.push_through        = nil
+                        st.pre_push_run        = nil
+                        st.probed              = nil
+                        st.probe_until         = nil
                     end
-                    safe_call(npc.set_enable_anomalies_pathfinding, npc, false)
                 end
 
                 if within_radius or restrictions_ignore_radius then

@@ -232,7 +232,28 @@
         <text>Stuck Timeout (s)</text>
     </string>
     <string id="ui_mcm_mai_npc_stuck_timeout_desc">
-        <text>Seconds an NPC can try to avoid a field without making progress before it commits to sprinting straight through (taking damage). Setting this too low short-circuits the bolt-throwing / route-planning phase, making NPCs sprint off prematurely. Default: 20</text>
+        <text>Seconds an NPC can try to route around a field without making net progress (e.g. walking in circles) before it commits to sprinting straight through, taking damage. Default: 20</text>
+    </string>
+
+    <string id="ui_mcm_mai_enable_probe">
+        <text>Bolt Probing</text>
+    </string>
+    <string id="ui_mcm_mai_enable_probe_desc">
+        <text>Let a lone stalker test an unfamiliar anomaly field with bolts before walking around it. Only triggers when no other NPC is nearby, so clusters stay silent and avoid the multi-NPC freeze. Default: ON</text>
+    </string>
+
+    <string id="ui_mcm_mai_probe_isolation_radius">
+        <text>Probe Spacing (m)</text>
+    </string>
+    <string id="ui_mcm_mai_probe_isolation_radius_desc">
+        <text>Only one NPC per this radius throws bolts at a field (one "tester" per group); the rest route around silently. Bolt-throwers are always at least this far apart, so larger = fewer simultaneous probers (safer from the dense-field freeze), smaller = livelier but riskier. Default: 8m</text>
+    </string>
+
+    <string id="ui_mcm_mai_probe_duration">
+        <text>Probe Duration (s)</text>
+    </string>
+    <string id="ui_mcm_mai_probe_duration_desc">
+        <text>How long a stalker throws bolts at a field before committing to walking around it. Higher = more bolts thrown per encounter. Default: 5s</text>
     </string>
 
     <!-- ### Community Exclusions ### -->
