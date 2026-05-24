@@ -42,9 +42,13 @@ local debug_anomalies_shown = false
 local npc_state = {}
 
 local ANOMALY_ATTRIBUTION_TIMEOUT = 5000
--- Cap on how many distinct anomalies are tracked per detection pass (and added to
--- memory). Only the count matters for the avoid decision, so a small cap bounds work.
-local MAX_RESTRICTIONS_PER_NPC = 3
+-- Cap on how many distinct anomalies an NPC restricts (and remembers) at once. Higher =
+-- more complete avoidance in dense clusters (it can block a whole cluster and route around
+-- it) instead of leaving gaps it walks through. Cost: enclosure risk -- if the blocked
+-- zones leave no accessible vertex, the engine's movement manager can CTD. The guards are
+-- MIN_RESTRICT_DISTANCE (the NPC's own tile is never blocked) and the push-through escape
+-- (drops all restrictions once stuck/in-contact).
+local MAX_RESTRICTIONS_PER_NPC = 30
 -- An anomaly this close (meters from center) counts as "already inside": the NPC
 -- can't usefully route around it, so it isn't treated as a fresh detection -- the
 -- push-through path handles getting it out instead.
@@ -639,6 +643,21 @@ local function clear_npc_restrictions(npc)
     if st then st.restrictions = nil end
 end
 
+-- Order-independent equality for two restriction (anomaly-name) lists. Used to avoid
+-- re-issuing an unchanged restriction set: add_restrictions/remove_restrictions force the
+-- engine to rebuild the NPC's path, and doing that every tick produces a visible ~2s
+-- stutter-step. We only re-apply when the set actually changes.
+local function same_restriction_set(a, b)
+    if not a or not b then return false end
+    if #a ~= #b then return false end
+    local seen = {}
+    for i = 1, #a do seen[a[i]] = true end
+    for i = 1, #b do
+        if not seen[b[i]] then return false end
+    end
+    return true
+end
+
 -- Per-tick snapshot of online stalker positions, rebuilt at the top of each periodic
 -- tick. Lets the probe elect a cluster tester without per-NPC engine spatial queries.
 local tick_npc_positions = {}
@@ -738,12 +757,13 @@ local function update_npc_restrictions(npc, detection_radius)
         return
     end
 
-    -- Push-through: the NPC has committed to crossing. Drop restrictions (so it isn't
-    -- boxed in) and sprint, until it clears the field (reset above).
+    -- Push-through: the NPC has committed to crossing. Restrictions/feel were already
+    -- dropped on commit. Don't re-command run every tick: a free NPC keeps the run set on
+    -- commit, while a scheme-driven (squad) NPC reverts to walk between ticks regardless,
+    -- so re-issuing run each tick only flickers its run animation. Just keep it unboxed.
     if st.push_through then
         if st.restrictions then clear_npc_restrictions(npc) end
         set_npc_feel(npc, st, false)
-        safe_call(npc.set_movement_type, npc, move.run)
         return
     end
 
@@ -881,11 +901,16 @@ local function update_npc_restrictions(npc, detection_radius)
             end
         end
 
-        -- Restrict: route around silently. No feel, no bolts.
+        -- Restrict: route around silently. No feel, no bolts. Only re-issue when the set
+        -- changed -- re-applying an identical set every tick forces a path rebuild and
+        -- makes the NPC stutter-step ~every 2s.
         set_npc_feel(npc, st, false)
-        clear_npc_restrictions(npc)
-        safe_call(npc.add_restrictions, npc, "", tconcat(detected, ","))
-        st.restrictions = detected
+        if not same_restriction_set(detected, st.restrictions) then
+            clear_npc_restrictions(npc)
+            safe_call(npc.add_restrictions, npc, "", tconcat(detected, ","))
+            st.restrictions = detected
+            dbg_verbose("RESTRICT", "[%s] applied %d restrictions", npc:name() or "?", #detected)
+        end
 
         -- Displacement-based progress: re-anchor and reset the stall timer whenever the
         -- NPC covers STUCK_PROGRESS_DIST of net ground. An NPC walking in circles changes
@@ -902,8 +927,6 @@ local function update_npc_restrictions(npc, detection_radius)
         local stuck_ms = get_mcm_setting("npc_stuck_timeout", 20) * 1000
         if (current_time - st.restrict_start) > stuck_ms then
             commit_push_through(npc, st, "stuck routing around")
-        else
-            dbg_verbose("RESTRICT", "[%s] added %d restrictions", npc:name() or "?", #detected)
         end
     else
         -- Failed the rank roll: didn't notice. Clear restrictions/feel and walk through.
