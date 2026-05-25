@@ -235,25 +235,18 @@
         <text>Seconds an NPC can try to route around a field without making net progress (e.g. walking in circles) before it commits to sprinting straight through, taking damage. Default: 20</text>
     </string>
 
-    <string id="ui_mcm_mai_enable_probe">
-        <text>Bolt Probing</text>
+    <string id="ui_mcm_mai_engine_avoidance">
+        <text>Engine Avoidance (feel)</text>
     </string>
-    <string id="ui_mcm_mai_enable_probe_desc">
-        <text>Let a lone stalker test an unfamiliar anomaly field with bolts before walking around it. Only triggers when no other NPC is nearby, so clusters stay silent and avoid the multi-NPC freeze. Default: ON</text>
-    </string>
-
-    <string id="ui_mcm_mai_probe_isolation_radius">
-        <text>Probe Spacing (m)</text>
-    </string>
-    <string id="ui_mcm_mai_probe_isolation_radius_desc">
-        <text>Only one NPC per this radius throws bolts at a field (one "tester" per group); the rest route around silently. Bolt-throwers are always at least this far apart, so larger = fewer simultaneous probers (safer from the dense-field freeze), smaller = livelier but riskier. Default: 8m</text>
+    <string id="ui_mcm_mai_engine_avoidance_desc">
+        <text>In sparse anomaly fields, let the engine's native feel system route NPCs around anomalies (they also throw bolts). This avoids ALL anomaly types, unlike script restrictions which only block types whose shape catches the navmesh (acidic/electric are not blockable). Restricted to sparse fields because feel can freeze or crash in dense/enclosed ones; turn OFF for maximum stability. Default: ON</text>
     </string>
 
-    <string id="ui_mcm_mai_probe_duration">
-        <text>Probe Duration (s)</text>
+    <string id="ui_mcm_mai_engine_feel_max_density">
+        <text>Feel Density Limit</text>
     </string>
-    <string id="ui_mcm_mai_probe_duration_desc">
-        <text>How long a stalker throws bolts at a field before committing to walking around it. Higher = more bolts thrown per encounter. Default: 5s</text>
+    <string id="ui_mcm_mai_engine_feel_max_density_desc">
+        <text>Max anomalies within ~12m for a field to count as "sparse" and use engine feel avoidance. Denser fields fall back to script restrictions + sprint-through. Higher = feel used in more crowded fields (better avoidance, more freeze/crash risk); lower = safer. Default: 4</text>
     </string>
 
     <!-- ### Community Exclusions ### -->

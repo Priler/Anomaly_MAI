@@ -58,6 +58,12 @@ local MIN_RESTRICT_DISTANCE = 4
 -- displacement, not path length, so an NPC walking in circles (lots of motion, no
 -- net displacement) never clears this and trips the stuck timer.
 local STUCK_PROGRESS_DIST = 8
+-- Option B (density-gated engine avoidance): radius (meters) used to gauge how crowded an
+-- NPC's local anomaly field is. At/under the MCM "engine_feel_max_density" count within
+-- this radius the field counts as SPARSE and we hand routing to the engine feel system
+-- (which avoids all anomaly types); above it the field is DENSE and we stay on restrictions
+-- + push-through, because feel's freeze/CTD live in dense/enclosed fields.
+local FEEL_DENSITY_RADIUS = 12
 
 local pcall_failures_seen = {}
 
@@ -868,42 +874,45 @@ local function update_npc_restrictions(npc, detection_radius)
     end
 
     if #detected > 0 then
-        -- Probe phase: the cluster's elected tester tests an unfamiliar field with bolts
-        -- before committing. The engine's feel handles the bolt-throwing and routing it
-        -- out, so we add NO script restrictions during the probe (stacking ours on the
-        -- engine's own restrictions risks boxing the NPC in -> CTD). Only one NPC per
-        -- cluster feels at a time (leader election) so feelers never contend in one field.
-        local probe_enabled = get_mcm_setting("enable_probe", true)
-        if probe_enabled and not st.probed then
-            local iso_radius = get_mcm_setting("probe_isolation_radius", 15)
-            if is_cluster_tester(id, npc_pos, iso_radius) then
+        -- Option B -- density-gated engine avoidance. In a SPARSE field, hand routing to the
+        -- engine feel system (CStalkerActionGetOutOfAnomaly): it routes NPCs around EVERY
+        -- anomaly type, unlike add_restrictions which only blocks types whose shape catches
+        -- the navmesh (acidic/electric register inert). Gated to sparse fields because feel's
+        -- freeze (many feelers) and CTD (an enclosed feeler) live in dense/enclosed fields.
+        -- MCM toggle + tunable density threshold.
+        if get_mcm_setting("engine_avoidance", true) then
+            local max_density = get_mcm_setting("engine_feel_max_density", 4)
+            local local_density = 0
+            for _, anom in ipairs(nearby) do
+                if anom.pos and npc_pos:distance_to(anom.pos) <= FEEL_DENSITY_RADIUS then
+                    local_density = local_density + 1
+                    if local_density > max_density then break end
+                end
+            end
+            if local_density <= max_density then
+                -- Sparse: feel ON; drop our (possibly inert) restrictions and let the engine
+                -- route + throw bolts. Stuck backstop -- sprint out if it can't make net
+                -- progress (displacement-based, so circling still trips it).
                 if st.restrictions then clear_npc_restrictions(npc) end
                 set_npc_feel(npc, st, true)
-                if not st.probe_until then
-                    local probe_ms = get_mcm_setting("probe_duration", 5) * 1000
-                    st.probe_until = current_time + probe_ms
-                    dbg_log("PROBE", "[%s] probing field with bolts (cluster tester)", npc:name() or "?")
+                if not st.restrict_anchor_pos or not st.restrict_start then
+                    st.restrict_anchor_pos = npc_pos
+                    st.restrict_start      = current_time
+                elseif npc_pos:distance_to(st.restrict_anchor_pos) >= STUCK_PROGRESS_DIST then
+                    st.restrict_anchor_pos = npc_pos
+                    st.restrict_start      = current_time
                 end
-                if current_time < st.probe_until then
-                    return  -- still probing; let the engine's bolt/route-out play out
+                local feel_stuck_ms = get_mcm_setting("npc_stuck_timeout", 20) * 1000
+                if (current_time - st.restrict_start) > feel_stuck_ms then
+                    commit_push_through(npc, st, "stuck (engine avoidance)")
                 end
-                -- Window elapsed: stop feeling, hand off to silent restriction routing.
-                set_npc_feel(npc, st, false)
-                st.probed      = true
-                st.probe_until = nil
-                dbg_verbose("PROBE", "[%s] probe done - routing around", npc:name() or "?")
-            elseif st.feel_on then
-                -- A lower-id NPC entered the cluster and is now the tester; yield the feel.
-                set_npc_feel(npc, st, false)
-                st.probed      = true
-                st.probe_until = nil
-                dbg_log("PROBE", "[%s] probe yielded (another NPC is cluster tester)", npc:name() or "?")
+                return
             end
         end
 
-        -- Restrict: route around silently. No feel, no bolts. Only re-issue when the set
-        -- changed -- re-applying an identical set every tick forces a path rebuild and
-        -- makes the NPC stutter-step ~every 2s.
+        -- Dense field (or engine avoidance off): restriction-based avoidance, feel off.
+        -- Only re-issue when the set changed -- re-applying an identical set every tick
+        -- forces a path rebuild and makes the NPC stutter-step ~every 2s.
         set_npc_feel(npc, st, false)
         if not same_restriction_set(detected, st.restrictions) then
             clear_npc_restrictions(npc)
