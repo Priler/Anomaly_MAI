@@ -407,6 +407,16 @@ local function get_npc_community(npc)
     return safe_call(npc.character_community, npc)
 end
 
+-- True when the NPC is calmly walking (move.walk) with no enemy. In this state the
+-- "walking_immunity" rule treats it as fully aware: it always detects/avoids anomalies and
+-- takes no anomaly damage. Running and combat still roll (panic/haste = mistakes); standing
+-- is left to its normal low miss multiplier.
+local function is_safe_walking_state(npc)
+    if not is_valid_object(npc) then return false end
+    if safe_call(npc.best_enemy, npc) then return false end           -- in combat
+    return safe_call(npc.movement_type, npc) == move.walk
+end
+
 local function should_enable_anomaly_damage(npc)
     if not is_valid_stalker(npc) then return false, "invalid" end
     if npc:id() == 0 then return true, "actor" end
@@ -437,7 +447,12 @@ local function should_enable_anomaly_damage(npc)
     if is_ignore_npc(npc) then return false, "ignore_npc" end
     if is_companion_npc(npc) then return false, "companion" end
     if is_task_target_npc(npc) then return false, "task_target" end
-    
+
+    -- Walking + not in combat = no anomaly damage (pairs with guaranteed avoidance below).
+    if get_mcm_setting("walking_immunity", true) and is_safe_walking_state(npc) then
+        return false, "safe_walking"
+    end
+
     if get_mcm_setting("immune_zero_miss_chance", true) then
         local base_miss = get_rank_miss_chance(npc)
         if base_miss <= 0 then
@@ -795,6 +810,12 @@ local function update_npc_restrictions(npc, detection_radius)
     local state_mult = get_movement_state_multiplier(npc)
     local final_miss = mfloor(miss_chance * state_mult)
     final_miss = mmax(0, mmin(100, final_miss))
+
+    -- Walking + not in combat = guaranteed detection (0 miss): always restrict/avoid every
+    -- nearby anomaly. Pairs with the no-damage rule in should_enable_anomaly_damage.
+    if get_mcm_setting("walking_immunity", true) and is_safe_walking_state(npc) then
+        final_miss = 0
+    end
 
     local detected = {}
     local rank = "unknown"

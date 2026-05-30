@@ -148,6 +148,12 @@
     
     <!-- ### Movement State Multipliers ### -->
     
+    <string id="ui_mcm_mai_walking_immunity">
+        <text>Walking NPCs Immune</text>
+    </string>
+    <string id="ui_mcm_mai_walking_immunity_desc">
+        <text>While walking and not in combat, NPCs always detect and avoid anomalies and take no anomaly damage (the movement multipliers below still apply when standing, running, or in combat).</text>
+    </string>
     <string id="ui_mcm_mai_standing_miss_multiplier">
         <text>Standing</text>
     </string>
