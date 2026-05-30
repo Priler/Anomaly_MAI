@@ -66,7 +66,13 @@
     <string id="ui_mcm_mai_cleanup_map_markers_desc">
         <text>Remove leftover anomaly markers from previous sessions. Enable, apply, then disable. One-time cleanup action.</text>
     </string>
-    
+    <string id="ui_mcm_mai_debug_death_news">
+        <text>Anomaly Death News</text>
+    </string>
+    <string id="ui_mcm_mai_debug_death_news_desc">
+        <text>Show a news popup whenever any stalker dies in an anomaly: their name, rank and faction, the anomaly that killed them, and the location (level + coordinates).</text>
+    </string>
+
     <!-- ### Detection Settings ### -->
     
     <string id="ui_mcm_mai_base_detection_radius">

@@ -1009,7 +1009,9 @@ local function on_anomaly_before_activate(zone, obj, flags)
         time = time_global(),
         state = state,
         rank = rank,
-        community = community
+        community = community,
+        level = level.name(),          -- internal level id where contact happened
+        pos = get_position_copy(obj)   -- victim position at moment of contact
     }
 end
 
@@ -1163,23 +1165,33 @@ local function get_faction_name(community)
 end
 
 local function report_anomaly_death(npc, anomaly_info)
-    if not is_debug_enabled() then return end
+    local death_news = get_mcm_setting("debug_death_news", false)
+    -- Report if the dedicated death-news option OR general debug logging is on.
+    if not death_news and not is_debug_enabled() then return end
     if not is_valid_object(npc) then return end
-    
+
     local victim_name = npc:name() or "unknown"
     local faction_name = get_faction_name(anomaly_info.community)
     local victim_rank = anomaly_info.rank or "unknown"
     local victim_state = anomaly_info.state or "unknown"
-    
-    printf("[MAI][DEATH] %s (%s %s) killed by %s (%s) while %s", 
-        victim_name, victim_rank, faction_name, 
-        anomaly_info.name, anomaly_info.section, victim_state)
-    
-    if db.actor then
-        local news_text = sformat("%s (%s %s) killed by %s while %s", 
-            victim_name, victim_rank, faction_name, 
-            anomaly_info.section, victim_state)
-        db.actor:give_game_news("MAI: Anomaly Kill", news_text, "ui_inGame2_PD_Dengi", 0, 5000, 0)
+
+    -- Location: internal level id + rounded world coords captured at the moment of contact.
+    local loc_level = anomaly_info.level or (level and level.name()) or "unknown"
+    local loc_str = loc_level
+    local p = anomaly_info.pos
+    if p then
+        loc_str = sformat("%s [%.0f, %.0f, %.0f]", loc_level, p.x, p.y, p.z)
+    end
+
+    printf("[MAI][DEATH] %s (%s %s) killed by %s (%s) at %s while %s",
+        victim_name, victim_rank, faction_name,
+        anomaly_info.name, anomaly_info.section, loc_str, victim_state)
+
+    if death_news and db.actor then
+        local news_text = sformat("%s (%s %s) killed by %s at %s while %s",
+            victim_name, victim_rank, faction_name,
+            anomaly_info.section, loc_str, victim_state)
+        db.actor:give_game_news("MAI: Anomaly Kill", news_text, "ui_inGame2_PD_Dengi", 0, 8000, 0)
     end
 end
 

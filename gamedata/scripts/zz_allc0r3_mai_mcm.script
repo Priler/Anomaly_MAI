@@ -11,7 +11,8 @@ local defaults = {
     verbose_debug = false,
     show_debug_anomalies = false,
     cleanup_map_markers = false,
-    
+    debug_death_news = false,
+
     -- detection
     base_detection_radius = 30,
     cache_rebuild_delay = 2.5,
@@ -93,6 +94,7 @@ function on_mcm_load()
             { id = "verbose_debug",         type = "check", val = 1, def = false },
             { id = "show_debug_anomalies",  type = "check", val = 1, def = false },
             { id = "cleanup_map_markers",   type = "check", val = 1, def = false },
+            { id = "debug_death_news",      type = "check", val = 1, def = false },
             
             { id = "line_1", type = "line" },
             
