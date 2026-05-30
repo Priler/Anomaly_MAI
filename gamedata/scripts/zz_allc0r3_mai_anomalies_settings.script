@@ -73,4 +73,86 @@ mai_always_ignore_anom = {
     "red_zone_mine_thermal_strong_0000",
     "red_zone_mine_thermal_strong_0023",
     "red_zone_mine_thermal_strong_0003",
+
+    -- ### SPECIFIC ANOMALY NAMES (by location)
+
+    -- Cordon: field between north checkpoint and bridge, near the dam
+    "esc_zone_mine_gravitational_weak_0025",
+    "esc_zone_mine_gravitational_weak_0028",
+    "esc_zone_mine_gravitational_weak_0029",
+    "esc_zone_mine_gravitational_weak_0030",
+    "esc_zone_mine_gravitational_weak_0031",
+    "esc_zone_mine_gravitational_weak_0032",
+    "esc_zone_mine_gravitational_weak_0033",
+
+    -- Cordon: locomotive area
+    "esc_zone_mine_gravitational_weak_0015",
+    "esc_zone_mine_gravitational_weak_0016",
+    "esc_zone_mine_gravitational_weak_0017",
+    "esc_zone_mine_gravitational_weak_0018",
+    "esc_zone_mine_gravitational_weak_0019",
+    "esc_zone_mine_gravitational_weak_0020",
+    "esc_zone_mine_gravitational_weak_0021",
+    "esc_zone_mine_gravitational_weak_0022",
+    "esc_zone_mine_gravitational_weak_0023",
+    "esc_zone_mine_gravitational_weak_0034",
+
+    -- Cordon: near the village
+    "esc_zone_mine_gravitational_weak_0000",
+    "esc_zone_mine_gravitational_weak_0001",
+    "esc_zone_mine_gravitational_weak_0002",
+    "esc_zone_mine_gravitational_weak_0003",
+    "esc_zone_mine_gravitational_weak_0004",
+    "esc_zone_mine_gravitational_weak_0005",
+    "esc_zone_mine_gravitational_weak_0006",
+    "esc_zone_mine_gravitational_weak_0007",
+    "esc_zone_mine_gravitational_weak_0008",
+    "esc_zone_mine_gravitational_weak_0009",
+    "esc_zone_mine_gravitational_weak_0010",
+    "esc_zone_mine_gravitational_weak_0011",
+    "esc_zone_mine_gravitational_weak_0012",
+    "esc_zone_mine_gravitational_weak_0013",
+    "esc_zone_mine_gravitational_weak_0014",
+    "esc_zone_mine_gravitational_weak_0026",
+    "esc_zone_mine_gravitational_weak_0024",
+    "esc_zone_mine_gravitational_weak_0027",
+
+    -- Garbage: vehicle graveyard - some burners
+    "gar_zone_mine_thermal_conc_camp_15",
+    "gar_zone_mine_thermal_conc_camp_16",
+    "gar_zone_mine_thermal_conc_camp_17",
+    "gar_zone_mine_thermal_conc_camp_18",
+    "gar_zone_mine_thermal_conc_camp_19",
+    "gar_zone_mine_thermal_conc_camp_20",
+    "gar_zone_mine_thermal_conc_camp_21",
+    "gar_zone_mine_thermal_conc_camp_31",
+    "gar_zone_mine_thermal_conc_camp_27",
+
+    -- Wild Territory: tunnel with burners (so NPCs walk straight through)
+    "ros_zone_mine_thermal_average_0002",
+    "ros_zone_mine_thermal_average_0004",
+    "ros_zone_mine_thermal_average_0006",
+    "ros_zone_mine_thermal_average_0007",
+    "ros_zone_mine_thermal_average_0010",
+    "ros_zone_mine_thermal_average_0011",
+    "ros_zone_mine_thermal_average_0012",
+    "ros_zone_mine_thermal_average_0013",
+
+    -- Army Warehouses: flying anomalies
+    "mil_torrid_zone",
+
+    -- Army Warehouses: thermal anomalies
+    "mil_zone_mine_thermal_strong_0011",
+    "mil_zone_mine_thermal_strong_0012",
+    "mil_zone_mine_thermal_strong_0013",
+    "mil_zone_mine_thermal_strong_0014",
+    "mil_zone_mine_thermal_strong_0015",
+    "mil_zone_field_thermal_strong_1",
+    "mil_zone_mine_thermal_strong_0016",
+    "mil_zone_mine_thermal_strong_0017",
+    "mil_zone_mine_thermal_strong_0019",
+    "mil_zone_mine_thermal_strong_0021",
+
+    -- Army Warehouses: burner inside house at the farmstead
+    "mil_zone_zharka_static_strong_0003",
 }
