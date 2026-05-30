@@ -1359,7 +1359,9 @@ local function mai_periodic_tick()
                     configure_npc_anomaly_interaction(npc)
                 else
                     safe_call(npc.set_enable_anomalies_damage, npc, false)
-                    local st = npc_state[id]
+                    -- db.OnlineStalkers is an index-keyed array of ids, so the loop key `id`
+                    -- is the array index, NOT the object id. npc_state is keyed by real id.
+                    local st = npc_state[npc:id()]
                     if st then
                         if st.restrictions then clear_npc_restrictions(npc) end
                         set_npc_feel(npc, st, false)
