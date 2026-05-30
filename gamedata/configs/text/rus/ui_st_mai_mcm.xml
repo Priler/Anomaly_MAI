@@ -95,11 +95,17 @@
         <text>Delay after surge/psy-storm before rebuilding anomaly cache. Needed for Arrival mod compatibility. Default: 2.5s</text>
     </string>
     
-    <string id="ui_mcm_mai_effect_radius">
-        <text>Effect Radius (m)</text>
+    <string id="ui_mcm_mai_bubble_enabled">
+        <text>Interaction Bubble</text>
     </string>
-    <string id="ui_mcm_mai_effect_radius_desc">
-        <text>NPCs beyond this distance from player are protected from anomaly damage. Prevents distant NPC deaths. Default: 300m</text>
+    <string id="ui_mcm_mai_bubble_enabled_desc">
+        <text>Only NPCs within the bubble radius of the player interact with anomalies (can be damaged, avoid, etc.). NPCs outside the bubble are skipped from anomaly damage. Turn off to process all online NPCs regardless of distance.</text>
+    </string>
+    <string id="ui_mcm_mai_bubble_radius">
+        <text>Bubble Radius (m)</text>
+    </string>
+    <string id="ui_mcm_mai_bubble_radius_desc">
+        <text>Radius of the interaction bubble around the player. NPCs beyond this distance are protected from anomaly damage. Default: 150m. (Only used when Interaction Bubble is on.)</text>
     </string>
     
     <string id="ui_mcm_mai_restrictions_ignore_radius">
