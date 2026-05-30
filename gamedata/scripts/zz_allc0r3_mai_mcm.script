@@ -12,6 +12,7 @@ local defaults = {
     show_debug_anomalies = false,
     cleanup_map_markers = false,
     debug_death_news = false,
+    debug_death_map_spot = false,
 
     -- detection
     base_detection_radius = 30,
@@ -95,6 +96,7 @@ function on_mcm_load()
             { id = "show_debug_anomalies",  type = "check", val = 1, def = false },
             { id = "cleanup_map_markers",   type = "check", val = 1, def = false },
             { id = "debug_death_news",      type = "check", val = 1, def = false },
+            { id = "debug_death_map_spot",  type = "check", val = 1, def = false },
             
             { id = "line_1", type = "line" },
             

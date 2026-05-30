@@ -1195,6 +1195,42 @@ local function report_anomaly_death(npc, anomaly_info)
     end
 end
 
+-- Temporary map marker for an anomaly-killed corpse. Stock "red_location" spot type
+-- (configs/ui/map_spots.xml) so no custom spot XML is needed. NON-serialized: the spot
+-- never enters a save, and the removal time-event below doesn't survive save/load either,
+-- so a reload self-cleans any still-pending marker.
+local DEATH_SPOT_TYPE         = "red_location"
+local DEATH_SPOT_DURATION_SEC = 300   -- 5 minutes
+
+local function mark_anomaly_death_spot(npc, anomaly_info)
+    if not get_mcm_setting("debug_death_map_spot", false) then return end
+    if not is_valid_object(npc) then return end
+
+    local id = npc:id()
+    local hint = sformat("MAI: %s killed by %s",
+        npc:name() or "stalker", (anomaly_info and anomaly_info.section) or "anomaly")
+
+    if level.map_has_object_spot(id, DEATH_SPOT_TYPE) ~= 0 then
+        level.map_remove_object_spot(id, DEATH_SPOT_TYPE)
+    end
+    local ok = pcall(function()
+        level.map_add_object_spot(id, DEATH_SPOT_TYPE, hint)
+    end)
+    if not ok then return end
+    dbg_log("DEATH", "Map spot added for corpse %s (expires in %ds)", tostring(id), DEATH_SPOT_DURATION_SEC)
+
+    -- Auto-remove after the duration. Unique action id per corpse; Remove first so a
+    -- re-mark of the same id can't stack two timers.
+    RemoveTimeEvent("mai_death_spot", "spot_" .. id)
+    CreateTimeEvent("mai_death_spot", "spot_" .. id, DEATH_SPOT_DURATION_SEC, function()
+        if level.map_has_object_spot(id, DEATH_SPOT_TYPE) ~= 0 then
+            level.map_remove_object_spot(id, DEATH_SPOT_TYPE)
+            dbg_log("DEATH", "Map spot expired for corpse %s", tostring(id))
+        end
+        return true
+    end)
+end
+
 local function check_anomaly_deaths(current_time)
     local to_remove = {}
 
@@ -1210,6 +1246,7 @@ local function check_anomaly_deaths(current_time)
                     if not alive and not anomaly_info.reported then
                         anomaly_info.reported = true
                         report_anomaly_death(npc, anomaly_info)
+                        mark_anomaly_death_spot(npc, anomaly_info)
                         tinsert(to_remove, npc_id)
                     end
                 else

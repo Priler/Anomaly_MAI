@@ -72,6 +72,12 @@
     <string id="ui_mcm_mai_debug_death_news_desc">
         <text>Show a news popup whenever any stalker dies in an anomaly: their name, rank and faction, the anomaly that killed them, and the location (level + coordinates).</text>
     </string>
+    <string id="ui_mcm_mai_debug_death_map_spot">
+        <text>Anomaly Death Map Spot</text>
+    </string>
+    <string id="ui_mcm_mai_debug_death_map_spot_desc">
+        <text>Mark a stalker who died in an anomaly on the map with a temporary red spot. The marker auto-clears after 5 minutes (and does not persist into saves).</text>
+    </string>
 
     <!-- ### Detection Settings ### -->
     
