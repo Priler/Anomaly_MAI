@@ -64,7 +64,7 @@
         <text>Cleanup Old Markers</text>
     </string>
     <string id="ui_mcm_mai_cleanup_map_markers_desc">
-        <text>Remove leftover anomaly markers from previous sessions. Enable, apply, then disable. One-time cleanup action.</text>
+        <text>Remove leftover anomaly and death markers from previous sessions. Enable, apply, then disable. One-time cleanup action.</text>
     </string>
     <string id="ui_mcm_mai_debug_death_news">
         <text>Anomaly Death News</text>

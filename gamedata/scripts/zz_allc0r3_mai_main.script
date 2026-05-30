@@ -1460,6 +1460,10 @@ local function cleanup_old_map_markers()
             level.map_remove_object_spot(i, "anomaly_disabled")
             count = count + 1
         end
+        if level.map_has_object_spot(i, DEATH_SPOT_TYPE) ~= 0 then
+            level.map_remove_object_spot(i, DEATH_SPOT_TYPE)
+            count = count + 1
+        end
     end
     if count > 0 then
         dbg_log("CLEANUP", "Cleaned up %d map markers", count)
