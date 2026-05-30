@@ -44,11 +44,15 @@ local npc_state = {}
 local ANOMALY_ATTRIBUTION_TIMEOUT = 5000
 -- Cap on how many distinct anomalies an NPC restricts (and remembers) at once. Higher =
 -- more complete avoidance in dense clusters (it can block a whole cluster and route around
--- it) instead of leaving gaps it walks through. Cost: enclosure risk -- if the blocked
--- zones leave no accessible vertex, the engine's movement manager can CTD. The guards are
--- MIN_RESTRICT_DISTANCE (the NPC's own tile is never blocked) and the push-through escape
--- (drops all restrictions once stuck/in-contact).
-local MAX_RESTRICTIONS_PER_NPC = 30
+-- it) instead of leaving gaps it walks through. Cost: enclosure risk -- IN-list restrictors
+-- carve forbidden regions out of the navmesh (engine: accessible(v) = not_inside(IN_region)),
+-- so a ring of avoid-zones around an NPC can leave no accessible vertex and CTD the movement
+-- manager in setup_movement_params. Kept deliberately low: nearby anomalies are sorted
+-- closest-first (get_nearby_anomalies), so the budget already spends on the most imminent
+-- threats, and a tighter cap shrinks the enclosure window between detection and the
+-- push-through escape (which only fires after npc_stuck_timeout). Guards: MIN_RESTRICT_DISTANCE
+-- (the NPC's own tile is never blocked) + push-through (drops all restrictions once stuck).
+local MAX_RESTRICTIONS_PER_NPC = 12
 -- An anomaly this close (meters from center) counts as "already inside": the NPC
 -- can't usefully route around it, so it isn't treated as a fresh detection -- the
 -- push-through path handles getting it out instead.
@@ -558,7 +562,7 @@ local function get_movement_state_multiplier(npc)
     if best_enemy then has_enemy = true end
     
     if has_enemy then
-        return get_mcm_setting("combat_miss_multiplier", 2.5)
+        return get_mcm_setting("combat_miss_multiplier", 3.0)
     end
     
     local movement = safe_call(npc.movement_type, npc)
@@ -668,6 +672,11 @@ end
 -- tick. Lets the probe elect a cluster tester without per-NPC engine spatial queries.
 local tick_npc_positions = {}
 
+-- Per-tick anomaly name->pos map, built ONCE at the top of mai_periodic_tick from
+-- anomaly_cache and reused by every NPC's memory bookkeeping below. Avoids rebuilding an
+-- O(#anomaly_cache) table per NPC per tick (was done twice per NPC in update_npc_restrictions).
+local tick_cache_by_name = {}
+
 -- Elect a single bolt-prober per local cluster: an NPC is the tester only if no
 -- lower-id stalker sits within `radius` of it. A lone NPC always qualifies; in a crowd
 -- exactly one (the lowest id) does. Because any two testers must each be the lowest in
@@ -747,8 +756,7 @@ local function update_npc_restrictions(npc, detection_radius)
         local mem_decay_ms = get_mcm_setting("anomaly_memory_decay", 30) * 1000
         if mem_decay_ms > 0 and st.known_anomalies then
             local known = st.known_anomalies
-            local cache_by_name = {}
-            for _, c in ipairs(anomaly_cache) do cache_by_name[c.name] = c.pos end
+            local cache_by_name = tick_cache_by_name
             for anom_name, mem in pairs(known) do
                 local c_pos = cache_by_name[anom_name]
                 if not c_pos then
@@ -830,8 +838,7 @@ local function update_npc_restrictions(npc, detection_radius)
     if mem_decay_ms > 0 then
         st.known_anomalies = st.known_anomalies or {}
         local known = st.known_anomalies
-        local cache_by_name = {}
-        for _, c in ipairs(anomaly_cache) do cache_by_name[c.name] = c.pos end
+        local cache_by_name = tick_cache_by_name
 
         -- Add remembered anomalies not caught by this detection roll (up to cap).
         for anom_name, mem in pairs(known) do
@@ -902,7 +909,7 @@ local function update_npc_restrictions(npc, detection_radius)
                     st.restrict_anchor_pos = npc_pos
                     st.restrict_start      = current_time
                 end
-                local feel_stuck_ms = get_mcm_setting("npc_stuck_timeout", 20) * 1000
+                local feel_stuck_ms = get_mcm_setting("npc_stuck_timeout", 40) * 1000
                 if (current_time - st.restrict_start) > feel_stuck_ms then
                     commit_push_through(npc, st, "stuck (engine avoidance)")
                 end
@@ -933,7 +940,7 @@ local function update_npc_restrictions(npc, detection_radius)
             st.restrict_start      = current_time
         end
 
-        local stuck_ms = get_mcm_setting("npc_stuck_timeout", 20) * 1000
+        local stuck_ms = get_mcm_setting("npc_stuck_timeout", 40) * 1000
         if (current_time - st.restrict_start) > stuck_ms then
             commit_push_through(npc, st, "stuck routing around")
         end
@@ -1233,7 +1240,12 @@ local function mai_periodic_tick()
 
     check_anomaly_deaths(current_time)
     ensure_cache()
-    
+
+    -- Build the anomaly name->pos map once per tick; every NPC's memory bookkeeping reuses it.
+    local cbn = {}
+    for _, c in ipairs(anomaly_cache) do cbn[c.name] = c.pos end
+    tick_cache_by_name = cbn
+
     local effect_radius = get_mcm_setting("effect_radius", 300)
     local restrictions_ignore_radius = get_mcm_setting("restrictions_ignore_radius", true)
     local detection_radius = get_mcm_setting("base_detection_radius", 30)
