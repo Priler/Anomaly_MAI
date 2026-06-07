@@ -1,20 +1,26 @@
 -- MAI Heal-in-Anomaly Guard
--- Blocks the NPC Limping and Healing mod (axr_otheal scheme) from running its medkit/
--- bandage action while the NPC is inside an anomaly's damage radius.
+-- Blocks NPC heal actions from running while the NPC is inside an anomaly's damage
+-- radius. Covers two sources:
+--   1. axr_otheal scheme (NPC Limping and Healing mod) -- medic heals a teammate.
+--   2. xr_eat_medkit.consume_medkit (vanilla self-heal, plus AlifeTactics's
+--      replacement which adds npc:movement_enabled(false) + set_desired_position()
+--      + clear_animations() on the first heal tick -- traps the NPC for ~6s).
 --
--- Why: axr_otheal's only anomaly safety check is the GOAP precondition
--- world_property(stalker_ids.property_anomaly, false). That property is only TRUE when
--- the engine has actively sensed an anomaly via FEEL (set_enable_anomalies_pathfinding).
--- MAI turns FEEL OFF for push_through NPCs and non-elected feelers, so from the engine's
--- view property_anomaly stays FALSE even when the NPC is standing in a thermal. The
--- precondition passes, the action calls npc:movement_enabled(false) for 3.5-7.5s, and
--- the NPC is locked inside the zone.
+-- Why: anomaly-safety in both schemes relies on the GOAP world_property
+-- stalker_ids.property_anomaly, which is only TRUE when the engine actively sensed
+-- an anomaly via FEEL (set_enable_anomalies_pathfinding). MAI turns FEEL OFF for
+-- push_through NPCs and non-elected feelers, so the property stays FALSE even when
+-- the NPC is standing in a thermal. The heal action passes its precondition, locks
+-- movement, and the NPC dies in the zone.
 --
--- How: monkey-patch evaluator_npc_otheal:evaluate to return false when the NPC is in
--- an anomaly (prevents the action from being chosen by GOAP), plus monkey-patch
--- action_npc_otheal:execute as a defensive catch -- if the action already initialized
--- before our evaluator hook returned false, the execute hook undoes the movement lock
--- and clears the heal state so GOAP re-plans on the next tick.
+-- How:
+--   * axr_otheal: monkey-patch evaluator_npc_otheal:evaluate (returns false in
+--     anomaly so GOAP never chooses heal) plus action_npc_otheal:execute as a
+--     defensive catch that undoes the movement lock and clears heal state.
+--   * xr_eat_medkit: wrap consume_medkit. It's the single choke point both vanilla
+--     and AlifeTactics-patched self-heal go through; blocking here stops the
+--     heal_hp / heal_bleed chain from starting and therefore stops AlifeTactics's
+--     movement_enabled(false) lock from ever firing.
 
 
 -- Margin (meters) for "in damage radius" -- matches MIN_RESTRICT_DISTANCE in the main
@@ -50,15 +56,42 @@ local function npc_in_anomaly(npc)
 end
 
 
+local function install_self_heal_guard()
+    if not xr_eat_medkit or not xr_eat_medkit.consume_medkit then
+        log("xr_eat_medkit.consume_medkit unavailable; self-heal guard skipped")
+        return
+    end
+    local orig = xr_eat_medkit.consume_medkit
+    xr_eat_medkit.consume_medkit = function(npc, medkit, kind)
+        if npc_in_anomaly(npc) then
+            if debug_enabled() then
+                log("[%s] blocked self-heal (%s, inside anomaly)",
+                    npc and npc:name() or "?", tostring(kind))
+            end
+            return  -- medkit isn't consumed (orig's alife_release_id never runs)
+        end
+        return orig(npc, medkit, kind)
+    end
+    log("Self-heal anomaly guard installed (xr_eat_medkit.consume_medkit)")
+end
+
+
 local function install()
     if installed then return end
 
+    -- Self-heal guard installs independently of axr_otheal -- vanilla xr_eat_medkit
+    -- is always present, so this runs even when the NPC Limping and Healing mod
+    -- isn't installed.
+    install_self_heal_guard()
+
     if not axr_otheal then
-        log("axr_otheal not loaded; guard disabled (heal mod not installed)")
+        log("axr_otheal not loaded; otheal guard disabled (heal mod not installed)")
+        installed = true
         return
     end
     if not axr_otheal.evaluator_npc_otheal or not axr_otheal.action_npc_otheal then
-        log("axr_otheal classes missing; guard disabled")
+        log("axr_otheal classes missing; otheal guard disabled")
+        installed = true
         return
     end
 
