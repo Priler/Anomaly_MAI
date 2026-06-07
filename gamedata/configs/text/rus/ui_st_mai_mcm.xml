@@ -138,6 +138,13 @@
         <text>NPCs with 0% base miss chance become completely immune to anomaly damage. Safety net for veterans.</text>
     </string>
     
+    <string id="ui_mcm_mai_combat_only_damage">
+        <text>Урон только в бою</text>
+    </string>
+    <string id="ui_mcm_mai_combat_only_damage_desc">
+        <text>НПС получают урон от аномалий только в бою (есть враг). Вне боя они по-прежнему обнаруживают и обходят аномалии, но не получают урон от зон, мимо которых проходят. Пока этот параметр ВКЛ, он переопределяет "Неуязвимость идущих НПС", "Период защиты" и множители промаха по движению/рангу (вне боя НПС и так неуязвимы); выключите его, чтобы использовать эти настройки. По умолчанию: ВКЛ</text>
+    </string>
+
     <string id="ui_mcm_mai_block_anomalies_on_corpses">
         <text>Block on Corpses</text>
     </string>
@@ -159,6 +166,12 @@
     </string>
     <string id="ui_mcm_mai_walking_immunity_desc">
         <text>While walking and not in combat, NPCs always detect and avoid anomalies and take no anomaly damage (the movement multipliers below still apply when standing, running, or in combat).</text>
+    </string>
+    <string id="ui_mcm_mai_safe_grace_period">
+        <text>Период защиты (сек)</text>
+    </string>
+    <string id="ui_mcm_mai_safe_grace_period_desc">
+        <text>После того как спокойный НПС (стоит/идёт, без врага) переходит на бег, он остаётся неуязвим к урону от аномалий ещё столько секунд, чтобы бегущий сталкер не получал урон мгновенно. В бою защита не действует. 0 отключает период защиты. По умолчанию: 10</text>
     </string>
     <string id="ui_mcm_mai_standing_miss_multiplier">
         <text>Standing</text>
@@ -244,6 +257,146 @@
     </string>
     <string id="ui_mcm_mai_rank_legend_miss_chance_desc">
         <text>Base miss chance for Legend stalkers. Default: 0%</text>
+    </string>
+
+    <!-- ### Anomaly Kill Rate Limit ### -->
+
+    <string id="ui_mcm_mai_kill_rate_title">
+        <text>Лимит убийств аномалиями</text>
+    </string>
+    <string id="ui_mcm_mai_kill_rate_limit">
+        <text>Включить лимит убийств</text>
+    </string>
+    <string id="ui_mcm_mai_kill_rate_limit_desc">
+        <text>Ограничивает, сколько НПС аномалии могут убить в минуту, отдельно по фракции и по рангу. НПС защищён от урона аномалий, как только ЛИБО его фракция, ЛИБО его ранг достигает своего лимита за скользящую минуту. Каждый лимит ниже: 0 = без ограничения. Общий выключатель для всех лимитов. По умолчанию: ВКЛ</text>
+    </string>
+
+    <string id="ui_mcm_mai_kill_cap_faction_stalker">
+        <text>Одиночки уб/мин</text>
+    </string>
+    <string id="ui_mcm_mai_kill_cap_faction_stalker_desc">
+        <text>Макс. Одиночек, убитых аномалиями в минуту. 0 = без ограничения.</text>
+    </string>
+    <string id="ui_mcm_mai_kill_cap_faction_bandit">
+        <text>Бандиты уб/мин</text>
+    </string>
+    <string id="ui_mcm_mai_kill_cap_faction_bandit_desc">
+        <text>Макс. Бандитов, убитых аномалиями в минуту. 0 = без ограничения.</text>
+    </string>
+    <string id="ui_mcm_mai_kill_cap_faction_dolg">
+        <text>Долг уб/мин</text>
+    </string>
+    <string id="ui_mcm_mai_kill_cap_faction_dolg_desc">
+        <text>Макс. бойцов Долга, убитых аномалиями в минуту. 0 = без ограничения.</text>
+    </string>
+    <string id="ui_mcm_mai_kill_cap_faction_freedom">
+        <text>Свобода уб/мин</text>
+    </string>
+    <string id="ui_mcm_mai_kill_cap_faction_freedom_desc">
+        <text>Макс. бойцов Свободы, убитых аномалиями в минуту. 0 = без ограничения.</text>
+    </string>
+    <string id="ui_mcm_mai_kill_cap_faction_monolith">
+        <text>Монолит уб/мин</text>
+    </string>
+    <string id="ui_mcm_mai_kill_cap_faction_monolith_desc">
+        <text>Макс. бойцов Монолита, убитых аномалиями в минуту. 0 = без ограничения.</text>
+    </string>
+    <string id="ui_mcm_mai_kill_cap_faction_army">
+        <text>Военные уб/мин</text>
+    </string>
+    <string id="ui_mcm_mai_kill_cap_faction_army_desc">
+        <text>Макс. Военных, убитых аномалиями в минуту. 0 = без ограничения.</text>
+    </string>
+    <string id="ui_mcm_mai_kill_cap_faction_ecolog">
+        <text>Учёные уб/мин</text>
+    </string>
+    <string id="ui_mcm_mai_kill_cap_faction_ecolog_desc">
+        <text>Макс. Учёных, убитых аномалиями в минуту. 0 = без ограничения.</text>
+    </string>
+    <string id="ui_mcm_mai_kill_cap_faction_killer">
+        <text>Наёмники уб/мин</text>
+    </string>
+    <string id="ui_mcm_mai_kill_cap_faction_killer_desc">
+        <text>Макс. Наёмников, убитых аномалиями в минуту. 0 = без ограничения.</text>
+    </string>
+    <string id="ui_mcm_mai_kill_cap_faction_greh">
+        <text>Грех уб/мин</text>
+    </string>
+    <string id="ui_mcm_mai_kill_cap_faction_greh_desc">
+        <text>Макс. бойцов Греха, убитых аномалиями в минуту. 0 = без ограничения.</text>
+    </string>
+    <string id="ui_mcm_mai_kill_cap_faction_renegade">
+        <text>Ренегаты уб/мин</text>
+    </string>
+    <string id="ui_mcm_mai_kill_cap_faction_renegade_desc">
+        <text>Макс. Ренегатов, убитых аномалиями в минуту. 0 = без ограничения.</text>
+    </string>
+    <string id="ui_mcm_mai_kill_cap_faction_isg">
+        <text>ИСГ уб/мин</text>
+    </string>
+    <string id="ui_mcm_mai_kill_cap_faction_isg_desc">
+        <text>Макс. бойцов ИСГ, убитых аномалиями в минуту. 0 = без ограничения.</text>
+    </string>
+    <string id="ui_mcm_mai_kill_cap_faction_csky">
+        <text>Чистое Небо уб/мин</text>
+    </string>
+    <string id="ui_mcm_mai_kill_cap_faction_csky_desc">
+        <text>Макс. бойцов Чистого Неба, убитых аномалиями в минуту. 0 = без ограничения.</text>
+    </string>
+    <string id="ui_mcm_mai_kill_cap_faction_zombied">
+        <text>Зомби уб/мин</text>
+    </string>
+    <string id="ui_mcm_mai_kill_cap_faction_zombied_desc">
+        <text>Макс. Зомби, убитых аномалиями в минуту. 0 = без ограничения.</text>
+    </string>
+
+    <string id="ui_mcm_mai_kill_cap_rank_novice">
+        <text>Новичок уб/мин</text>
+    </string>
+    <string id="ui_mcm_mai_kill_cap_rank_novice_desc">
+        <text>Макс. Новичков, убитых аномалиями в минуту. 0 = без ограничения.</text>
+    </string>
+    <string id="ui_mcm_mai_kill_cap_rank_trainee">
+        <text>Стажёр уб/мин</text>
+    </string>
+    <string id="ui_mcm_mai_kill_cap_rank_trainee_desc">
+        <text>Макс. Стажёров, убитых аномалиями в минуту. 0 = без ограничения.</text>
+    </string>
+    <string id="ui_mcm_mai_kill_cap_rank_experienced">
+        <text>Опытный уб/мин</text>
+    </string>
+    <string id="ui_mcm_mai_kill_cap_rank_experienced_desc">
+        <text>Макс. Опытных, убитых аномалиями в минуту. 0 = без ограничения.</text>
+    </string>
+    <string id="ui_mcm_mai_kill_cap_rank_professional">
+        <text>Профи уб/мин</text>
+    </string>
+    <string id="ui_mcm_mai_kill_cap_rank_professional_desc">
+        <text>Макс. Профи, убитых аномалиями в минуту. 0 = без ограничения.</text>
+    </string>
+    <string id="ui_mcm_mai_kill_cap_rank_veteran">
+        <text>Ветеран уб/мин</text>
+    </string>
+    <string id="ui_mcm_mai_kill_cap_rank_veteran_desc">
+        <text>Макс. Ветеранов, убитых аномалиями в минуту. 0 = без ограничения.</text>
+    </string>
+    <string id="ui_mcm_mai_kill_cap_rank_expert">
+        <text>Эксперт уб/мин</text>
+    </string>
+    <string id="ui_mcm_mai_kill_cap_rank_expert_desc">
+        <text>Макс. Экспертов, убитых аномалиями в минуту. 0 = без ограничения.</text>
+    </string>
+    <string id="ui_mcm_mai_kill_cap_rank_master">
+        <text>Мастер уб/мин</text>
+    </string>
+    <string id="ui_mcm_mai_kill_cap_rank_master_desc">
+        <text>Макс. Мастеров, убитых аномалиями в минуту. 0 = без ограничения.</text>
+    </string>
+    <string id="ui_mcm_mai_kill_cap_rank_legend">
+        <text>Легенда уб/мин</text>
+    </string>
+    <string id="ui_mcm_mai_kill_cap_rank_legend_desc">
+        <text>Макс. Легенд, убитых аномалиями в минуту. 0 = без ограничения.</text>
     </string>
 
     <!-- ### Avoidance Settings ### -->

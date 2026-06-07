@@ -407,14 +407,76 @@ local function get_npc_community(npc)
     return safe_call(npc.character_community, npc)
 end
 
--- True when the NPC is calmly walking (move.walk) with no enemy. In this state the
--- "walking_immunity" rule treats it as fully aware: it always detects/avoids anomalies and
--- takes no anomaly damage. Running and combat still roll (panic/haste = mistakes); standing
--- is left to its normal low miss multiplier.
-local function is_safe_walking_state(npc)
+-- True when the NPC is calm (walking move.walk OR standing move.stand) with no enemy. In this
+-- state the "walking_immunity" rule treats it as fully aware: it always detects/avoids anomalies
+-- and takes no anomaly damage. Running and combat still roll (panic/haste = mistakes).
+-- Standing is included because an NPC can walk into a zone (immune) and then halt inside it; if
+-- standing only had its low miss multiplier it would take damage and die where it stopped.
+local function is_safe_immune_state(npc)
     if not is_valid_object(npc) then return false end
     if safe_call(npc.best_enemy, npc) then return false end           -- in combat
-    return safe_call(npc.movement_type, npc) == move.walk
+    local mt = safe_call(npc.movement_type, npc)
+    return mt == move.walk or mt == move.stand
+end
+
+-- [ Anomaly-Kill Rate Limiter ]--
+-- Caps confirmed anomaly kills per rolling minute, separately per faction and per rank.
+-- An NPC is protected (anomaly damage suppressed) if EITHER its faction OR its rank has
+-- already reached its cap inside the window. Cap 0 = unlimited. Kills are recorded only on
+-- confirmed, attributed deaths (check_anomaly_deaths); the gate below reads the counts.
+local KILL_WINDOW_MS   = 60000   -- 1 minute rolling window
+local kill_log_faction = {}      -- community id keyed to an array of death time_global() stamps
+local kill_log_rank    = {}      -- rank name keyed to an array of death time_global() stamps
+
+-- Count log entries newer than the window for `key`, pruning stale entries.
+-- Stamps are appended in time_global order (monotonic within a session), so list[1] is the
+-- oldest: if it is still fresh, nothing is stale and we return the length with no allocation.
+-- Only when the head is stale do we compact into a new table.
+local function count_recent_kills(log, key, now)
+    local list = log[key]
+    if not list then return 0 end
+    local cutoff = now - KILL_WINDOW_MS
+    if list[1] >= cutoff then return #list end
+    local kept = {}
+    for i = 1, #list do
+        if list[i] >= cutoff then kept[#kept + 1] = list[i] end
+    end
+    log[key] = (#kept > 0) and kept or nil
+    return #kept
+end
+
+local function record_anomaly_kill(community, rank, now)
+    if community then
+        local l = kill_log_faction[community]
+        if not l then l = {}; kill_log_faction[community] = l end
+        l[#l + 1] = now
+    end
+    -- Match the gate's fallback (should_enable_anomaly_damage uses "novice" when the live
+    -- rank lookup fails) so a kill captured with a missing/unknown rank still lands in the
+    -- same bucket the cap check reads, instead of an orphan "unknown" key nothing counts.
+    if not rank or rank == "unknown" then rank = "novice" end
+    local l = kill_log_rank[rank]
+    if not l then l = {}; kill_log_rank[rank] = l end
+    l[#l + 1] = now
+end
+
+-- (capped, which) -- true if this NPC's faction OR rank has hit its per-minute cap.
+-- Returns false when the master toggle is off or both relevant caps are 0 (unlimited).
+local function kill_cap_reached(community, rank, now)
+    if not get_mcm_setting("kill_rate_limit", true) then return false end
+    if community then
+        local cap = get_mcm_setting("kill_cap_faction_" .. community, 0)
+        if cap > 0 and count_recent_kills(kill_log_faction, community, now) >= cap then
+            return true, "faction"
+        end
+    end
+    if rank then
+        local cap = get_mcm_setting("kill_cap_rank_" .. rank, 0)
+        if cap > 0 and count_recent_kills(kill_log_rank, rank, now) >= cap then
+            return true, "rank"
+        end
+    end
+    return false
 end
 
 local function should_enable_anomaly_damage(npc)
@@ -448,9 +510,49 @@ local function should_enable_anomaly_damage(npc)
     if is_companion_npc(npc) then return false, "companion" end
     if is_task_target_npc(npc) then return false, "task_target" end
 
-    -- Walking + not in combat = no anomaly damage (pairs with guaranteed avoidance below).
-    if get_mcm_setting("walking_immunity", true) and is_safe_walking_state(npc) then
-        return false, "safe_walking"
+    -- Anomaly-kill rate limit: if this NPC's faction or rank already hit its per-minute
+    -- kill cap, protect it (suppress damage) until the rolling window frees up. Independent
+    -- of combat -- the cap exists to stop mass die-offs, which mostly happen mid-fight.
+    do
+        local rank_name = "novice"
+        if ranks and ranks.get_obj_rank_name then
+            rank_name = safe_call(ranks.get_obj_rank_name, npc) or "novice"
+        end
+        local capped, which = kill_cap_reached(community, rank_name, time_global())
+        if capped then return false, "kill_cap_" .. which end
+    end
+
+    -- Combat-only damage: NPCs only take anomaly damage while fighting (best_enemy set).
+    -- Out of combat they still detect/avoid normally but never get chipped by zones they
+    -- calmly pass near. Broader than walking_immunity (covers running out-of-combat too).
+    --
+    -- NOTE: when this is ON (default) it fully subsumes walking_immunity, safe_grace_period,
+    -- and the standing/walking/running and rank miss multipliers below: every out-of-combat
+    -- NPC returns here, and in-combat NPCs skip the walking/grace block (it requires no enemy).
+    -- Those finer-grained features only take effect when combat_only_damage is OFF.
+    if get_mcm_setting("combat_only_damage", true) and not safe_call(npc.best_enemy, npc) then
+        return false, "not_in_combat"
+    end
+
+    -- Walking/standing immunity + grace period (pairs with guaranteed avoidance below).
+    -- A calm NPC (standing/walking, no enemy) takes no anomaly damage and we stamp its
+    -- last-safe time. When it transitions to running, the grace window keeps it protected
+    -- for `safe_grace_period` more seconds so a bolting NPC isn't instantly chipped.
+    -- Combat is always excluded: best_enemy set => no immunity, no grace.
+    if get_mcm_setting("walking_immunity", true) and not safe_call(npc.best_enemy, npc) then
+        local id = npc:id()
+        local st = npc_state[id]
+        if is_safe_immune_state(npc) then
+            if not st then st = {}; npc_state[id] = st end
+            st.last_safe_time = time_global()
+            return false, "safe_immune"
+        end
+        -- Running/other out-of-combat: still protected during the grace window.
+        local grace_ms = get_mcm_setting("safe_grace_period", 10) * 1000
+        if grace_ms > 0 and st and st.last_safe_time
+                and (time_global() - st.last_safe_time) <= grace_ms then
+            return false, "safe_grace"
+        end
     end
 
     if get_mcm_setting("immune_zero_miss_chance", true) then
@@ -811,10 +913,11 @@ local function update_npc_restrictions(npc, detection_radius)
     local final_miss = mfloor(miss_chance * state_mult)
     final_miss = mmax(0, mmin(100, final_miss))
 
-    -- Walking + not in combat = guaranteed detection (0 miss): always restrict/avoid every
-    -- nearby anomaly. Pairs with the no-damage rule in should_enable_anomaly_damage.
-    if get_mcm_setting("walking_immunity", true) and is_safe_walking_state(npc) then
+    -- Walking/standing + not in combat = guaranteed detection (0 miss): always restrict/avoid
+    -- every nearby anomaly. Pairs with the no-damage rule in should_enable_anomaly_damage.
+    if get_mcm_setting("walking_immunity", true) and is_safe_immune_state(npc) then
         final_miss = 0
+        st.last_safe_time = current_time   -- feeds the running grace window (should_enable_anomaly_damage)
     end
 
     local detected = {}
@@ -1217,9 +1320,15 @@ local function report_anomaly_death(npc, anomaly_info)
 end
 
 -- Temporary map marker for an anomaly-killed corpse. Stock "red_location" spot type
--- (configs/ui/map_spots.xml) so no custom spot XML is needed. NON-serialized: the spot
--- never enters a save, and the removal time-event below doesn't survive save/load either,
--- so a reload self-cleans any still-pending marker.
+-- (configs/ui/map_spots.xml) so no custom spot XML is needed.
+--
+-- SERIALIZED: a fresh corpse is online only for a moment, then alife pushes it offline.
+-- The non-serialized map_add_object_spot silently no-ops on (or drops on transition to)
+-- an offline object, so the spot never renders even though the add "succeeds". The _ser
+-- variant pins onto the offline object and is the path base game uses for offline targets
+-- (treasure_manager). Tradeoff: the spot now enters the save, and the removal time-event
+-- below does NOT survive save/load -- a marker pending at save time is orphaned on reload.
+-- The MCM "cleanup_map_markers" sweep removes stray red_location spots to cover that case.
 local DEATH_SPOT_TYPE         = "red_location"
 local DEATH_SPOT_DURATION_SEC = 300   -- 5 minutes
 
@@ -1234,9 +1343,15 @@ local function mark_anomaly_death_spot(npc, anomaly_info)
     if level.map_has_object_spot(id, DEATH_SPOT_TYPE) ~= 0 then
         level.map_remove_object_spot(id, DEATH_SPOT_TYPE)
     end
+    -- Serialized add for the (about-to-go-offline) corpse, with the non-ser form as fallback.
     local ok = pcall(function()
-        level.map_add_object_spot(id, DEATH_SPOT_TYPE, hint)
+        level.map_add_object_spot_ser(id, DEATH_SPOT_TYPE, hint)
     end)
+    if not ok then
+        ok = pcall(function()
+            level.map_add_object_spot(id, DEATH_SPOT_TYPE, hint)
+        end)
+    end
     if not ok then return end
     dbg_log("DEATH", "Map spot added for corpse %s (expires in %ds)", tostring(id), DEATH_SPOT_DURATION_SEC)
 
@@ -1266,6 +1381,7 @@ local function check_anomaly_deaths(current_time)
                     local alive = safe_call(npc.alive, npc)
                     if not alive and not anomaly_info.reported then
                         anomaly_info.reported = true
+                        record_anomaly_kill(anomaly_info.community, anomaly_info.rank, current_time)
                         report_anomaly_death(npc, anomaly_info)
                         mark_anomaly_death_spot(npc, anomaly_info)
                         tinsert(to_remove, npc_id)
@@ -1552,6 +1668,12 @@ local function on_game_load()
     anomaly_protection_cache = {}
     pcall_failures_seen  = {}
 
+    -- Drop the rolling kill-rate logs: they are in-memory only (time_global keeps running
+    -- across a load), so without this a freshly loaded save would inherit up to a minute of
+    -- kill stamps from whatever was playing before.
+    kill_log_faction     = {}
+    kill_log_rank        = {}
+
     -- Bootstrap (or re-arm) the periodic tick. RemoveTimeEvent first so a stale chain from
     -- a prior session/level doesn't double-fire alongside the new one.
     RemoveTimeEvent("mai_periodic", "mai_tick")
@@ -1563,6 +1685,8 @@ local function on_level_changed()
     invalidate_cache()
     npc_state            = {}
     pcall_failures_seen  = {}
+    kill_log_faction     = {}
+    kill_log_rank        = {}
 
     -- The actor_on_first_update hook will re-arm the timer on the new level via on_game_load.
     -- Drop the existing chain so it doesn't fire against a half-loaded level.

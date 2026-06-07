@@ -138,6 +138,13 @@
         <text>NPCs with 0% base miss chance become completely immune to anomaly damage. Safety net for veterans.</text>
     </string>
     
+    <string id="ui_mcm_mai_combat_only_damage">
+        <text>Damage Only in Combat</text>
+    </string>
+    <string id="ui_mcm_mai_combat_only_damage_desc">
+        <text>NPCs only take anomaly damage while in combat (have an enemy). Out of combat they still detect and avoid anomalies but never get chipped by zones they pass near. While this is ON it overrides Walking NPCs Immune, the Grace Period, and the movement/rank miss multipliers (out-of-combat NPCs are already immune); turn it OFF to use those finer settings. Default: ON</text>
+    </string>
+
     <string id="ui_mcm_mai_block_anomalies_on_corpses">
         <text>Block on Corpses</text>
     </string>
@@ -159,6 +166,12 @@
     </string>
     <string id="ui_mcm_mai_walking_immunity_desc">
         <text>While walking and not in combat, NPCs always detect and avoid anomalies and take no anomaly damage (the movement multipliers below still apply when standing, running, or in combat).</text>
+    </string>
+    <string id="ui_mcm_mai_safe_grace_period">
+        <text>Grace Period (sec)</text>
+    </string>
+    <string id="ui_mcm_mai_safe_grace_period_desc">
+        <text>After a calm NPC (standing/walking, no enemy) starts running, it stays immune to anomaly damage for this many extra seconds, so a bolting stalker isn't instantly chipped. Combat is always excluded. 0 disables the grace period. Default: 10</text>
     </string>
     <string id="ui_mcm_mai_standing_miss_multiplier">
         <text>Standing</text>
@@ -244,6 +257,146 @@
     </string>
     <string id="ui_mcm_mai_rank_legend_miss_chance_desc">
         <text>Base miss chance for Legend stalkers. Default: 0%</text>
+    </string>
+
+    <!-- ### Anomaly Kill Rate Limit ### -->
+
+    <string id="ui_mcm_mai_kill_rate_title">
+        <text>Anomaly Kill Rate Limit</text>
+    </string>
+    <string id="ui_mcm_mai_kill_rate_limit">
+        <text>Enable Kill Rate Limit</text>
+    </string>
+    <string id="ui_mcm_mai_kill_rate_limit_desc">
+        <text>Cap how many NPCs anomalies can kill per minute, separately per faction and per rank. An NPC is protected from anomaly damage once EITHER its faction OR its rank reaches its cap in the rolling minute. Each cap below: 0 = unlimited. Master switch for all caps. Default: ON</text>
+    </string>
+
+    <string id="ui_mcm_mai_kill_cap_faction_stalker">
+        <text>Loner kills/min</text>
+    </string>
+    <string id="ui_mcm_mai_kill_cap_faction_stalker_desc">
+        <text>Max Loner NPCs killed by anomalies per minute. 0 = unlimited.</text>
+    </string>
+    <string id="ui_mcm_mai_kill_cap_faction_bandit">
+        <text>Bandit kills/min</text>
+    </string>
+    <string id="ui_mcm_mai_kill_cap_faction_bandit_desc">
+        <text>Max Bandit NPCs killed by anomalies per minute. 0 = unlimited.</text>
+    </string>
+    <string id="ui_mcm_mai_kill_cap_faction_dolg">
+        <text>Duty kills/min</text>
+    </string>
+    <string id="ui_mcm_mai_kill_cap_faction_dolg_desc">
+        <text>Max Duty NPCs killed by anomalies per minute. 0 = unlimited.</text>
+    </string>
+    <string id="ui_mcm_mai_kill_cap_faction_freedom">
+        <text>Freedom kills/min</text>
+    </string>
+    <string id="ui_mcm_mai_kill_cap_faction_freedom_desc">
+        <text>Max Freedom NPCs killed by anomalies per minute. 0 = unlimited.</text>
+    </string>
+    <string id="ui_mcm_mai_kill_cap_faction_monolith">
+        <text>Monolith kills/min</text>
+    </string>
+    <string id="ui_mcm_mai_kill_cap_faction_monolith_desc">
+        <text>Max Monolith NPCs killed by anomalies per minute. 0 = unlimited.</text>
+    </string>
+    <string id="ui_mcm_mai_kill_cap_faction_army">
+        <text>Military kills/min</text>
+    </string>
+    <string id="ui_mcm_mai_kill_cap_faction_army_desc">
+        <text>Max Military NPCs killed by anomalies per minute. 0 = unlimited.</text>
+    </string>
+    <string id="ui_mcm_mai_kill_cap_faction_ecolog">
+        <text>Ecologist kills/min</text>
+    </string>
+    <string id="ui_mcm_mai_kill_cap_faction_ecolog_desc">
+        <text>Max Ecologist NPCs killed by anomalies per minute. 0 = unlimited.</text>
+    </string>
+    <string id="ui_mcm_mai_kill_cap_faction_killer">
+        <text>Mercenary kills/min</text>
+    </string>
+    <string id="ui_mcm_mai_kill_cap_faction_killer_desc">
+        <text>Max Mercenary NPCs killed by anomalies per minute. 0 = unlimited.</text>
+    </string>
+    <string id="ui_mcm_mai_kill_cap_faction_greh">
+        <text>Sin kills/min</text>
+    </string>
+    <string id="ui_mcm_mai_kill_cap_faction_greh_desc">
+        <text>Max Sin NPCs killed by anomalies per minute. 0 = unlimited.</text>
+    </string>
+    <string id="ui_mcm_mai_kill_cap_faction_renegade">
+        <text>Renegade kills/min</text>
+    </string>
+    <string id="ui_mcm_mai_kill_cap_faction_renegade_desc">
+        <text>Max Renegade NPCs killed by anomalies per minute. 0 = unlimited.</text>
+    </string>
+    <string id="ui_mcm_mai_kill_cap_faction_isg">
+        <text>ISG kills/min</text>
+    </string>
+    <string id="ui_mcm_mai_kill_cap_faction_isg_desc">
+        <text>Max ISG NPCs killed by anomalies per minute. 0 = unlimited.</text>
+    </string>
+    <string id="ui_mcm_mai_kill_cap_faction_csky">
+        <text>Clear Sky kills/min</text>
+    </string>
+    <string id="ui_mcm_mai_kill_cap_faction_csky_desc">
+        <text>Max Clear Sky NPCs killed by anomalies per minute. 0 = unlimited.</text>
+    </string>
+    <string id="ui_mcm_mai_kill_cap_faction_zombied">
+        <text>Zombie kills/min</text>
+    </string>
+    <string id="ui_mcm_mai_kill_cap_faction_zombied_desc">
+        <text>Max Zombie NPCs killed by anomalies per minute. 0 = unlimited.</text>
+    </string>
+
+    <string id="ui_mcm_mai_kill_cap_rank_novice">
+        <text>Novice kills/min</text>
+    </string>
+    <string id="ui_mcm_mai_kill_cap_rank_novice_desc">
+        <text>Max Novice NPCs killed by anomalies per minute. 0 = unlimited.</text>
+    </string>
+    <string id="ui_mcm_mai_kill_cap_rank_trainee">
+        <text>Trainee kills/min</text>
+    </string>
+    <string id="ui_mcm_mai_kill_cap_rank_trainee_desc">
+        <text>Max Trainee NPCs killed by anomalies per minute. 0 = unlimited.</text>
+    </string>
+    <string id="ui_mcm_mai_kill_cap_rank_experienced">
+        <text>Experienced kills/min</text>
+    </string>
+    <string id="ui_mcm_mai_kill_cap_rank_experienced_desc">
+        <text>Max Experienced NPCs killed by anomalies per minute. 0 = unlimited.</text>
+    </string>
+    <string id="ui_mcm_mai_kill_cap_rank_professional">
+        <text>Professional kills/min</text>
+    </string>
+    <string id="ui_mcm_mai_kill_cap_rank_professional_desc">
+        <text>Max Professional NPCs killed by anomalies per minute. 0 = unlimited.</text>
+    </string>
+    <string id="ui_mcm_mai_kill_cap_rank_veteran">
+        <text>Veteran kills/min</text>
+    </string>
+    <string id="ui_mcm_mai_kill_cap_rank_veteran_desc">
+        <text>Max Veteran NPCs killed by anomalies per minute. 0 = unlimited.</text>
+    </string>
+    <string id="ui_mcm_mai_kill_cap_rank_expert">
+        <text>Expert kills/min</text>
+    </string>
+    <string id="ui_mcm_mai_kill_cap_rank_expert_desc">
+        <text>Max Expert NPCs killed by anomalies per minute. 0 = unlimited.</text>
+    </string>
+    <string id="ui_mcm_mai_kill_cap_rank_master">
+        <text>Master kills/min</text>
+    </string>
+    <string id="ui_mcm_mai_kill_cap_rank_master_desc">
+        <text>Max Master NPCs killed by anomalies per minute. 0 = unlimited.</text>
+    </string>
+    <string id="ui_mcm_mai_kill_cap_rank_legend">
+        <text>Legend kills/min</text>
+    </string>
+    <string id="ui_mcm_mai_kill_cap_rank_legend_desc">
+        <text>Max Legend NPCs killed by anomalies per minute. 0 = unlimited.</text>
     </string>
 
     <!-- ### Avoidance Settings ### -->
