@@ -69,32 +69,18 @@
     
     <!-- ### Detection Settings ### -->
     
-    <string id="ui_mcm_mai_base_detection_radius">
-        <text>Detection Radius (m)</text>
-    </string>
-    <string id="ui_mcm_mai_base_detection_radius_desc">
-        <text>How far NPCs can detect anomalies. Higher = earlier detection but more pathfinding restrictions. Default: 30m</text>
-    </string>
-    
-    <string id="ui_mcm_mai_cache_rebuild_delay">
-        <text>Cache Rebuild Delay (s)</text>
-    </string>
-    <string id="ui_mcm_mai_cache_rebuild_delay_desc">
-        <text>Delay after surge/psy-storm before rebuilding anomaly cache. Needed for Arrival mod compatibility. Default: 2.5s</text>
-    </string>
-    
     <string id="ui_mcm_mai_effect_radius">
         <text>Effect Radius (m)</text>
     </string>
     <string id="ui_mcm_mai_effect_radius_desc">
         <text>NPCs beyond this distance from player are protected from anomaly damage. Prevents distant NPC deaths. Default: 300m</text>
     </string>
-    
+
     <string id="ui_mcm_mai_restrictions_ignore_radius">
         <text>Global Pathfinding</text>
     </string>
     <string id="ui_mcm_mai_restrictions_ignore_radius_desc">
-        <text>If enabled, all NPCs avoid anomalies regardless of distance. If disabled, only NPCs within effect radius get restrictions.</text>
+        <text>If enabled, anomaly restrictions are applied to all NPCs regardless of distance from the player, so distant squads route around anomalies before you arrive (and you'll find NPCs who died to anomalies off-screen). If disabled, only NPCs within the effect radius get restrictions. Damage and feel state always respect the effect radius. Default: ON</text>
     </string>
 
     <string id="ui_mcm_mai_anomaly_memory_decay">
@@ -228,25 +214,11 @@
         <text>Avoidance Settings</text>
     </string>
 
-    <string id="ui_mcm_mai_npc_stuck_timeout">
-        <text>Stuck Timeout (s)</text>
-    </string>
-    <string id="ui_mcm_mai_npc_stuck_timeout_desc">
-        <text>Seconds an NPC can try to route around a field without making net progress (e.g. walking in circles) before it commits to sprinting straight through, taking damage. Default: 20</text>
-    </string>
-
     <string id="ui_mcm_mai_engine_avoidance">
         <text>Engine Avoidance (feel)</text>
     </string>
     <string id="ui_mcm_mai_engine_avoidance_desc">
         <text>In sparse anomaly fields, let the engine's native feel system route NPCs around anomalies (they also throw bolts). This avoids ALL anomaly types, unlike script restrictions which only block types whose shape catches the navmesh (acidic/electric are not blockable). Restricted to sparse fields because feel can freeze or crash in dense/enclosed ones; turn OFF for maximum stability. Default: ON</text>
-    </string>
-
-    <string id="ui_mcm_mai_engine_feel_max_density">
-        <text>Feel Density Limit</text>
-    </string>
-    <string id="ui_mcm_mai_engine_feel_max_density_desc">
-        <text>Max anomalies within ~12m for a field to count as "sparse" and use engine feel avoidance. Denser fields fall back to script restrictions + sprint-through. Higher = feel used in more crowded fields (better avoidance, more freeze/crash risk); lower = safer. Default: 4</text>
     </string>
 
     <!-- ### Community Exclusions ### -->
