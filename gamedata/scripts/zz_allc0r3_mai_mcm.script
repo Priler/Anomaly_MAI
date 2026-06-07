@@ -17,11 +17,18 @@ local defaults = {
     cache_rebuild_delay = 2.5,
     effect_radius = 300,
     restrictions_ignore_radius = true,
-    
+    anomaly_memory_decay = 30,
+
+    -- avoidance
+    npc_stuck_timeout = 40,
+    engine_avoidance = true,
+    engine_feel_max_density = 4,
+
     -- damage
     enable_armor_damage_mult = true,
     immune_zero_miss_chance = true,
     block_anomalies_on_corpses = true,
+    block_corpse_loot_in_anomalies = true,
     
     -- movement
     standing_miss_multiplier = 0.3,
@@ -30,14 +37,20 @@ local defaults = {
     combat_miss_multiplier = 3.0,
     
     -- ranks
-    rank_novice_miss_chance = 100,
+    rank_novice_miss_chance = 90,
     rank_trainee_miss_chance = 75,
     rank_experienced_miss_chance = 50,
     rank_professional_miss_chance = 25,
-    rank_veteran_miss_chance = 0,
-    rank_expert_miss_chance = 0,
-    rank_master_miss_chance = 0,
+    rank_veteran_miss_chance = 15,
+    rank_expert_miss_chance = 10,
+    rank_master_miss_chance = 5,
     rank_legend_miss_chance = 0,
+
+    -- community exclusions (defaults match the previously hardcoded npc_settings tables)
+    greh_ignore_damage = true,
+    greh_ignore_restrictions = true,
+    monolith_ignore_damage = true,
+    monolith_ignore_restrictions = false,
 }
 
 
@@ -90,15 +103,26 @@ function on_mcm_load()
             { id = "cache_rebuild_delay",   type = "track", val = 2, min = 0, max = 5, step = 0.5, def = 2.5 },
             { id = "effect_radius",         type = "track", val = 2, min = 100, max = 500, step = 50, def = 300 },
             { id = "restrictions_ignore_radius", type = "check", val = 1, def = true },
-            
+            { id = "anomaly_memory_decay", type = "track", val = 2, min = 0, max = 120, step = 10, def = 30 },
+
             { id = "line_2", type = "line" },
-            
+
+            -- avoidance
+            { id = "pathfinding_title", type = "title", text = "ui_mcm_mai_pathfinding_title" },
+
+            { id = "npc_stuck_timeout",        type = "track", val = 2, min = 4, max = 120, step = 1, def = 40 },
+            { id = "engine_avoidance",         type = "check", val = 1, def = true },
+            { id = "engine_feel_max_density",  type = "track", val = 2, min = 1, max = 15, step = 1, def = 4 },
+
+            { id = "line_2b", type = "line" },
+
             -- damage
             { id = "damage_title", type = "title", text = "ui_mcm_mai_damage_title" },
             
-            { id = "enable_armor_damage_mult",   type = "check", val = 1, def = true },
-            { id = "immune_zero_miss_chance",    type = "check", val = 1, def = true },
-            { id = "block_anomalies_on_corpses", type = "check", val = 1, def = true },
+            { id = "enable_armor_damage_mult",       type = "check", val = 1, def = true },
+            { id = "immune_zero_miss_chance",        type = "check", val = 1, def = true },
+            { id = "block_anomalies_on_corpses",     type = "check", val = 1, def = true },
+            { id = "block_corpse_loot_in_anomalies", type = "check", val = 1, def = true },
             
             { id = "line_3", type = "line" },
             
@@ -115,14 +139,24 @@ function on_mcm_load()
             -- rank miss chance
             { id = "rank_title", type = "title", text = "ui_mcm_mai_rank_title" },
             
-            { id = "rank_novice_miss_chance",       type = "track", val = 2, min = 0, max = 100, step = 5, def = 100 },
+            { id = "rank_novice_miss_chance",       type = "track", val = 2, min = 0, max = 100, step = 5, def = 90 },
             { id = "rank_trainee_miss_chance",      type = "track", val = 2, min = 0, max = 100, step = 5, def = 75 },
             { id = "rank_experienced_miss_chance",  type = "track", val = 2, min = 0, max = 100, step = 5, def = 50 },
             { id = "rank_professional_miss_chance", type = "track", val = 2, min = 0, max = 100, step = 5, def = 25 },
-            { id = "rank_veteran_miss_chance",      type = "track", val = 2, min = 0, max = 100, step = 5, def = 0 },
-            { id = "rank_expert_miss_chance",       type = "track", val = 2, min = 0, max = 100, step = 5, def = 0 },
-            { id = "rank_master_miss_chance",       type = "track", val = 2, min = 0, max = 100, step = 5, def = 0 },
+            { id = "rank_veteran_miss_chance",      type = "track", val = 2, min = 0, max = 100, step = 5, def = 15 },
+            { id = "rank_expert_miss_chance",       type = "track", val = 2, min = 0, max = 100, step = 5, def = 10 },
+            { id = "rank_master_miss_chance",       type = "track", val = 2, min = 0, max = 100, step = 5, def = 5 },
             { id = "rank_legend_miss_chance",       type = "track", val = 2, min = 0, max = 100, step = 5, def = 0 },
+
+            { id = "line_5", type = "line" },
+
+            -- community exclusions
+            { id = "community_excl_title", type = "title", text = "ui_mcm_mai_community_excl_title" },
+
+            { id = "greh_ignore_damage",           type = "check", val = 1, def = true },
+            { id = "greh_ignore_restrictions",     type = "check", val = 1, def = true },
+            { id = "monolith_ignore_damage",       type = "check", val = 1, def = true },
+            { id = "monolith_ignore_restrictions", type = "check", val = 1, def = false },
         }
     }
 end

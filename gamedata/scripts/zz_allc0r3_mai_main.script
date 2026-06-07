@@ -26,8 +26,7 @@ local anomaly_cache = {}
 local cache_valid = false
 local cache_level = nil
 
-local global_update_timer = 0
-local UPDATE_INTERVAL = 2000
+local UPDATE_INTERVAL_SEC = 2.0
 
 local cached_debug_mode = false
 local cached_verbose_debug = false
@@ -36,12 +35,37 @@ local cached_show_debug_anomalies = false
 
 local debug_anomalies_shown = false
 
-local npc_last_update = {}
-local npc_restrictions = {}
-local npc_last_anomaly = {}
+-- Per-NPC state. All fields are optional; the table entry is created on first access and
+-- deleted on net_destroy. Fields: last_update, last_anomaly, known_anomalies,
+-- restrictions, restrict_start, restrict_anchor_pos, push_through, pre_push_run,
+-- feel_on, probed, probe_until, took_damage.
+local npc_state = {}
 
 local ANOMALY_ATTRIBUTION_TIMEOUT = 5000
+-- Cap on how many distinct anomalies an NPC restricts (and remembers) at once. Higher =
+-- more complete avoidance in dense clusters (it can block a whole cluster and route around
+-- it) instead of leaving gaps it walks through. Cost: enclosure risk -- if the blocked
+-- zones leave no accessible vertex, the engine's movement manager can CTD. The guards are
+-- MIN_RESTRICT_DISTANCE (the NPC's own tile is never blocked) and the push-through escape
+-- (drops all restrictions once stuck/in-contact).
 local MAX_RESTRICTIONS_PER_NPC = 30
+-- An anomaly this close (meters from center) counts as "already inside": the NPC
+-- can't usefully route around it, so it isn't treated as a fresh detection -- the
+-- push-through path handles getting it out instead.
+local MIN_RESTRICT_DISTANCE = 4
+-- Net distance (meters) an avoiding NPC must travel from where it started routing
+-- around before it counts as having made progress. Measured as straight-line
+-- displacement, not path length, so an NPC walking in circles (lots of motion, no
+-- net displacement) never clears this and trips the stuck timer.
+local STUCK_PROGRESS_DIST = 8
+-- Option B (density-gated engine avoidance): radius (meters) used to gauge how crowded an
+-- NPC's local anomaly field is. At/under the MCM "engine_feel_max_density" count within
+-- this radius the field counts as SPARSE and we hand routing to the engine feel system
+-- (which avoids all anomaly types); above it the field is DENSE and we stay on restrictions
+-- + push-through, because feel's freeze/CTD live in dense/enclosed fields.
+local FEEL_DENSITY_RADIUS = 12
+
+local pcall_failures_seen = {}
 
 
 -- [ Safe Wrappers ]--
@@ -49,6 +73,18 @@ local MAX_RESTRICTIONS_PER_NPC = 30
 local function safe_call(func, ...)
     local ok, result = pcall(func, ...)
     if ok then return result end
+
+    local info = debug.getinfo(2, "Sl")
+    local where = info and (info.short_src .. ":" .. info.currentline) or "unknown"
+    local key = where .. "|" .. tostring(result)
+
+    if not pcall_failures_seen[key] then
+        pcall_failures_seen[key] = 1
+        printf("[MAI][PCALL_FAIL] %s - %s (further occurrences silenced)", where, tostring(result))
+    else
+        pcall_failures_seen[key] = pcall_failures_seen[key] + 1
+    end
+
     return nil
 end
 
@@ -114,6 +150,12 @@ local function dbg_verbose(category, format, ...)
     if not is_verbose_debug() then return end
     local msg = sformat(format, ...)
     printf("[%s][MAI][%s] %s", time_global(), category, msg)
+end
+
+-- Always-on diagnostic logging. The engine's printf only substitutes %s, so the
+-- message is built with sformat first (which supports %d/%.1f) then passed as %s.
+local function diag_log(category, format, ...)
+    printf("[%s][MAI][%s] %s", time_global(), category, sformat(format, ...))
 end
 
 
@@ -202,36 +244,42 @@ local function rebuild_anomaly_cache()
     
     local count = 0
     local skipped = 0
+    local skip_reasons = { always_skip = 0, arrival_inactive = 0, dyn_disabled = 0, no_pos = 0, no_name = 0 }
     local arrival_loaded_now = is_arrival_loaded()
     local dyn_anomalies = bind_anomaly_field.dyn_anomalies
     local dyn_anomalies_level = dyn_anomalies and dyn_anomalies[lvl_name]
-    
+
     for _, v in pairs(fields) do
         local anom_obj = v and v.object
         if anom_obj then
             local anom_id = safe_call(anom_obj.id, anom_obj)
             if anom_id and anom_id ~= 65535 then
                 local se_obj = alife_object(anom_id)
-                
+
                 if se_obj then
                     local anom_name = safe_call(se_obj.name, se_obj)
-                    
-                    if not anom_name or is_always_skip_anomaly(anom_name) then
-                        skipped = skipped + 1
+                    local skip_reason = nil
+
+                    if not anom_name then
+                        skip_reason = "no_name"
+                    elseif is_always_skip_anomaly(anom_name) then
+                        skip_reason = "always_skip"
                     else
                         local is_active = true
-                        
+
                         if arrival_loaded_now then
                             is_active = is_arrival_anomaly_active(anom_id, lvl_name)
+                            if not is_active then skip_reason = "arrival_inactive" end
                         end
-                        
+
                         if is_active and dyn_anomalies_level then
                             local dyn_state = dyn_anomalies_level[anom_id]
                             if dyn_state == false then
                                 is_active = false
+                                skip_reason = "dyn_disabled"
                             end
                         end
-                        
+
                         if is_active then
                             local pos = safe_call(anom_obj.position, anom_obj)
                             if pos and pos.x and pos.y and pos.z then
@@ -244,19 +292,27 @@ local function rebuild_anomaly_cache()
                                 })
                                 count = count + 1
                             else
-                                skipped = skipped + 1
+                                skip_reason = "no_pos"
                             end
-                        else
-                            skipped = skipped + 1
                         end
+                    end
+
+                    if skip_reason then
+                        skipped = skipped + 1
+                        skip_reasons[skip_reason] = (skip_reasons[skip_reason] or 0) + 1
+                        dbg_verbose("CACHE", "skip [%s] id=%s reason=%s",
+                            anom_name or "?", tostring(anom_id), skip_reason)
                     end
                 end
             end
         end
     end
-    
+
     cache_valid = true
-    dbg_log("CACHE", "Rebuilt: %d anomalies on %s (skipped %d)", count, lvl_name, skipped)
+    dbg_log("CACHE", "Rebuilt: %d anomalies on %s (skipped %d: arrival=%d dyn=%d always=%d nopos=%d noname=%d)",
+        count, lvl_name, skipped,
+        skip_reasons.arrival_inactive, skip_reasons.dyn_disabled,
+        skip_reasons.always_skip, skip_reasons.no_pos, skip_reasons.no_name)
 end
 
 local function invalidate_cache()
@@ -350,22 +406,30 @@ end
 local function should_enable_anomaly_damage(npc)
     if not is_valid_stalker(npc) then return false, "invalid" end
     if npc:id() == 0 then return true, "actor" end
-    
+
     local community = get_npc_community(npc)
     if not community then return true, "no_community" end
-    
-    if not zz_allc0r3_mai_npc_settings then return true, "no_settings" end
-    
-    if zz_allc0r3_mai_npc_settings.mai_always_full_ignore_community and
-       zz_allc0r3_mai_npc_settings.mai_always_full_ignore_community[community] then
-        return false, "full_ignore_community"
+
+    -- MCM-driven per-community damage opt-out (overrides hardcoded tables for these communities)
+    if community == "greh" and get_mcm_setting("greh_ignore_damage", true) then
+        return false, "mcm_greh_no_damage"
     end
-    
-    if zz_allc0r3_mai_npc_settings.mai_no_damage_community and
-       zz_allc0r3_mai_npc_settings.mai_no_damage_community[community] then
-        return false, "no_damage_community"
+    if community == "monolith" and get_mcm_setting("monolith_ignore_damage", true) then
+        return false, "mcm_monolith_no_damage"
     end
-    
+
+    if zz_allc0r3_mai_npc_settings and community ~= "greh" and community ~= "monolith" then
+        if zz_allc0r3_mai_npc_settings.mai_always_full_ignore_community and
+           zz_allc0r3_mai_npc_settings.mai_always_full_ignore_community[community] then
+            return false, "full_ignore_community"
+        end
+
+        if zz_allc0r3_mai_npc_settings.mai_no_damage_community and
+           zz_allc0r3_mai_npc_settings.mai_no_damage_community[community] then
+            return false, "no_damage_community"
+        end
+    end
+
     if is_ignore_npc(npc) then return false, "ignore_npc" end
     if is_companion_npc(npc) then return false, "companion" end
     if is_task_target_npc(npc) then return false, "task_target" end
@@ -380,28 +444,55 @@ local function should_enable_anomaly_damage(npc)
     return true, "normal"
 end
 
+-- NPCs on these xr_logic schemes are bound to a fixed anchor and don't pathfind.
+-- Adding path restrictions just churns clear/add every tick and keeps tripping stuck recovery.
+local STATIC_POST_SCHEMES = {
+    camper      = true,  -- xr_camper: sniper/fixed firing position
+    remark      = true,  -- xr_remark: standing guard post
+    animpoint   = true,  -- xr_animpoint: sit/lean/stand at anchor
+    smartcover  = true,  -- xr_smartcover: smart cover anchor
+    sleeper     = true,  -- xr_sleeper: sleeping
+    kamp        = true,  -- xr_kamp: campfire idle
+}
+
+local function is_static_post_npc(npc)
+    if not npc then return false end
+    local st = db.storage[npc:id()]
+    if not st then return false end
+    return STATIC_POST_SCHEMES[st.active_scheme] == true
+end
+
 local function should_add_restrictions(npc)
     if not is_valid_stalker(npc) then return false end
-    
+
     local community = get_npc_community(npc)
     if not community then return true end
-    
-    if not zz_allc0r3_mai_npc_settings then return true end
-    
-    if zz_allc0r3_mai_npc_settings.mai_always_full_ignore_community and
-       zz_allc0r3_mai_npc_settings.mai_always_full_ignore_community[community] then
+
+    -- MCM-driven per-community restriction opt-out (overrides hardcoded tables for these communities)
+    if community == "greh" and get_mcm_setting("greh_ignore_restrictions", true) then
         return false
     end
-    
-    if zz_allc0r3_mai_npc_settings.mai_no_evade_community and
-       zz_allc0r3_mai_npc_settings.mai_no_evade_community[community] then
+    if community == "monolith" and get_mcm_setting("monolith_ignore_restrictions", false) then
         return false
     end
-    
+
+    if zz_allc0r3_mai_npc_settings and community ~= "greh" and community ~= "monolith" then
+        if zz_allc0r3_mai_npc_settings.mai_always_full_ignore_community and
+           zz_allc0r3_mai_npc_settings.mai_always_full_ignore_community[community] then
+            return false
+        end
+
+        if zz_allc0r3_mai_npc_settings.mai_no_evade_community and
+           zz_allc0r3_mai_npc_settings.mai_no_evade_community[community] then
+            return false
+        end
+    end
+
     if is_ignore_npc(npc) then return false end
     if is_companion_npc(npc) then return false end
     if is_task_target_npc(npc) then return false end
-    
+    if is_static_post_npc(npc) then return false end
+
     return true
 end
 
@@ -413,9 +504,9 @@ local function configure_npc_anomaly_interaction(npc)
     
     local should_damage, reason = should_enable_anomaly_damage(npc)
     safe_call(npc.set_enable_anomalies_damage, npc, should_damage)
-    safe_call(npc.set_enable_anomalies_pathfinding, npc, true)
-    
-    dbg_verbose("CONFIG", "NPC [%s] damage=%s (%s)", 
+    -- Anomaly-feel (pathfinding) flag is owned by update_npc_restrictions / set_npc_feel.
+
+    dbg_verbose("CONFIG", "NPC [%s] damage=%s (%s)",
         npc:name() or "?", tostring(should_damage), reason)
 end
 
@@ -434,13 +525,13 @@ local RANK_MCM_KEYS = {
 }
 
 local RANK_DEFAULTS = {
-    ["novice"] = 100,
+    ["novice"] = 90,
     ["trainee"] = 75,
     ["experienced"] = 50,
     ["professional"] = 25,
-    ["veteran"] = 0,
-    ["expert"] = 0,
-    ["master"] = 0,
+    ["veteran"] = 15,
+    ["expert"] = 10,
+    ["master"] = 5,
     ["legend"] = 0
 }
 
@@ -505,17 +596,23 @@ end
 
 local function get_nearby_anomalies(npc_pos, radius)
     if not npc_pos then return {} end
-    local result = {}
-    
+    local found = {}
+
     for _, anom in ipairs(anomaly_cache) do
         if anom.pos then
             local dist = npc_pos:distance_to(anom.pos)
             if dist <= radius then
-                tinsert(result, anom)
+                tinsert(found, { anom = anom, dist = dist })
             end
         end
     end
-    
+
+    -- Closest first, so the MAX_RESTRICTIONS_PER_NPC cap spends its budget on the nearest
+    -- (most imminent) threats instead of whatever happened to come first in cache order.
+    table.sort(found, function(a, b) return a.dist < b.dist end)
+
+    local result = {}
+    for i = 1, #found do result[i] = found[i].anom end
     return result
 end
 
@@ -539,89 +636,313 @@ local function get_closest_anomaly(npc_pos)
 end
 
 
--- [ Restriction Management ]--
+-- [ Anomaly Avoidance ]--
 
 local function clear_npc_restrictions(npc)
     if not is_valid_object(npc) then return end
-    
-    local id = npc:id()
     local current = safe_call(npc.in_restrictions, npc) or ""
-    
     if current ~= "" then
         safe_call(npc.remove_restrictions, npc, "", current)
         dbg_verbose("RESTRICT", "Cleared restrictions for [%s]", npc:name() or "?")
     end
-    
-    npc_restrictions[id] = nil
+    local st = npc_state[npc:id()]
+    if st then st.restrictions = nil end
+end
+
+-- Order-independent equality for two restriction (anomaly-name) lists. Used to avoid
+-- re-issuing an unchanged restriction set: add_restrictions/remove_restrictions force the
+-- engine to rebuild the NPC's path, and doing that every tick produces a visible ~2s
+-- stutter-step. We only re-apply when the set actually changes.
+local function same_restriction_set(a, b)
+    if not a or not b then return false end
+    if #a ~= #b then return false end
+    local seen = {}
+    for i = 1, #a do seen[a[i]] = true end
+    for i = 1, #b do
+        if not seen[b[i]] then return false end
+    end
+    return true
+end
+
+-- Per-tick snapshot of online stalker positions, rebuilt at the top of each periodic
+-- tick. Lets the probe elect a cluster tester without per-NPC engine spatial queries.
+local tick_npc_positions = {}
+
+-- Elect a single bolt-prober per local cluster: an NPC is the tester only if no
+-- lower-id stalker sits within `radius` of it. A lone NPC always qualifies; in a crowd
+-- exactly one (the lowest id) does. Because any two testers must each be the lowest in
+-- their own neighborhood, electeds are always >`radius` apart -- so feelers never share
+-- a field, which is what kept the multi-feeler contention freeze at bay.
+local function is_cluster_tester(self_id, self_pos, radius)
+    for i = 1, #tick_npc_positions do
+        local e = tick_npc_positions[i]
+        if e.id < self_id and self_pos:distance_to(e.pos) <= radius then
+            return false
+        end
+    end
+    return true
+end
+
+-- Set the per-NPC engine anomaly-feel flag, deduped via st.feel_on so we don't spam the
+-- engine each tick. ON = NPC throws bolts and the engine routes it out; OFF = pure
+-- restriction routing. Owned solely here so configure_npc_anomaly_interaction can't stomp
+-- an active probe between this function's throttled runs.
+local function set_npc_feel(npc, st, on)
+    if st.feel_on == on then return end
+    safe_call(npc.set_enable_anomalies_pathfinding, npc, on)
+    st.feel_on = on
+end
+
+-- Commit an NPC to sprinting straight through a field (it can't route around, or got hit
+-- and is fleeing). Drops restrictions and feel so the engine can't box it in, then runs.
+local function commit_push_through(npc, st, reason)
+    st.pre_push_run        = (safe_call(npc.movement_type, npc) == move.run)
+    st.push_through        = true
+    st.restrictions        = nil
+    st.restrict_start      = nil
+    st.restrict_anchor_pos = nil
+    st.probed              = nil
+    st.probe_until         = nil
+    set_npc_feel(npc, st, false)
+    clear_npc_restrictions(npc)
+    dbg_log("PUSH_THROUGH", "[%s] sprinting through (%s)", npc:name() or "?", reason)
+    safe_call(npc.set_movement_type, npc, move.run)
 end
 
 local function update_npc_restrictions(npc, detection_radius)
     if not should_add_restrictions(npc) then return end
     if not is_valid_stalker(npc) then return end
-    
+
     local id = npc:id()
     local current_time = time_global()
-    
-    if npc_last_update[id] and current_time - npc_last_update[id] < 1500 then
+    local st = npc_state[id]
+    if not st then st = {}; npc_state[id] = st end
+
+    if st.last_update and current_time - st.last_update < 1500 then
         return
     end
-    npc_last_update[id] = current_time
-    
+    st.last_update = current_time
+
     local npc_pos = get_position_copy(npc)
     if not npc_pos then return end
-    
+
     local radius = detection_radius or get_mcm_setting("base_detection_radius", 30)
     local nearby = get_nearby_anomalies(npc_pos, radius)
-    
+
     if #nearby == 0 then
-        if npc_restrictions[id] then
-            clear_npc_restrictions(npc)
+        if st.restrictions then clear_npc_restrictions(npc) end
+        set_npc_feel(npc, st, false)
+        if st.push_through and not st.pre_push_run then
+            safe_call(npc.set_movement_type, npc, move.walk)
+        end
+        st.restrict_start      = nil
+        st.restrict_anchor_pos = nil
+        st.push_through        = nil
+        st.pre_push_run        = nil
+        st.probed              = nil
+        st.probe_until         = nil
+        st.took_damage         = nil
+
+        -- Decay anomaly memory while NPC is away from all anomaly fields.
+        local mem_decay_ms = get_mcm_setting("anomaly_memory_decay", 30) * 1000
+        if mem_decay_ms > 0 and st.known_anomalies then
+            local known = st.known_anomalies
+            local cache_by_name = {}
+            for _, c in ipairs(anomaly_cache) do cache_by_name[c.name] = c.pos end
+            for anom_name, mem in pairs(known) do
+                local c_pos = cache_by_name[anom_name]
+                if not c_pos then
+                    known[anom_name] = nil
+                elseif npc_pos:distance_to(c_pos) > 2 * radius
+                        and (current_time - mem.last_seen) > mem_decay_ms then
+                    known[anom_name] = nil
+                end
+            end
+            if next(known) == nil then st.known_anomalies = nil end
         end
         return
     end
-    
+
+    -- Push-through: the NPC has committed to crossing. Restrictions/feel were already
+    -- dropped on commit. Don't re-command run every tick: a free NPC keeps the run set on
+    -- commit, while a scheme-driven (squad) NPC reverts to walk between ticks regardless,
+    -- so re-issuing run each tick only flickers its run animation. Just keep it unboxed.
+    if st.push_through then
+        if st.restrictions then clear_npc_restrictions(npc) end
+        set_npc_feel(npc, st, false)
+        return
+    end
+
+    -- In contact: took an anomaly hit since the last update. Don't probe or route -- you
+    -- don't throw bolts while burning. Commit to sprinting out. A boolean (cleared on
+    -- read) rather than a time window, so bursty/intermittent anomaly damage can't slip
+    -- through between the ~2s update ticks.
+    if st.took_damage then
+        st.took_damage = nil
+        commit_push_through(npc, st, "in contact")
+        return
+    end
+
     local miss_chance = get_rank_miss_chance(npc)
     local state_mult = get_movement_state_multiplier(npc)
     local final_miss = mfloor(miss_chance * state_mult)
     final_miss = mmax(0, mmin(100, final_miss))
-    
+
     local detected = {}
     local rank = "unknown"
     if ranks and ranks.get_obj_rank_name then
         rank = safe_call(ranks.get_obj_rank_name, npc) or "unknown"
     end
-    local state = get_movement_state_name(npc)
-    
+
     for _, anom in ipairs(nearby) do
         local immune_zero = get_mcm_setting("immune_zero_miss_chance", true)
-        
-        if immune_zero and final_miss <= 0 then
+
+        -- An anomaly the NPC is already inside can't be routed around, so don't treat
+        -- it as a fresh detection -- push-through handles getting it out.
+        local too_close = anom.pos and npc_pos:distance_to(anom.pos) < MIN_RESTRICT_DISTANCE
+
+        if too_close then
+            dbg_verbose("DETECT", "[%s] skipped [%s] (already inside zone)",
+                npc:name() or "?", anom.name)
+        elseif immune_zero and final_miss <= 0 then
             tinsert(detected, anom.name)
         else
             local roll = mrand(1, 100)
             if roll > final_miss then
                 tinsert(detected, anom.name)
-                dbg_log("DETECT", "[%s] (%s) detected [%s] (roll %d > %d%%)", 
+                dbg_log("DETECT", "[%s] (%s) detected [%s] (roll %d > %d%%)",
                     npc:name() or "?", rank, anom.name, roll, final_miss)
             else
-                dbg_verbose("DETECT", "[%s] (%s) missed [%s] (roll %d <= %d%%)", 
+                dbg_verbose("DETECT", "[%s] (%s) missed [%s] (roll %d <= %d%%)",
                     npc:name() or "?", rank, anom.name, roll, final_miss)
             end
         end
-        
+
         if #detected >= MAX_RESTRICTIONS_PER_NPC then
             break
         end
     end
-    
+
+    -- Anomaly memory: union fresh detections with previously-seen anomalies that
+    -- are still within 2× detection radius. Known anomalies bypass the miss roll,
+    -- so a failed RNG on a later tick doesn't un-restrict a field the NPC already saw.
+    local mem_decay_ms = get_mcm_setting("anomaly_memory_decay", 30) * 1000
+    if mem_decay_ms > 0 then
+        st.known_anomalies = st.known_anomalies or {}
+        local known = st.known_anomalies
+        local cache_by_name = {}
+        for _, c in ipairs(anomaly_cache) do cache_by_name[c.name] = c.pos end
+
+        -- Add remembered anomalies not caught by this detection roll (up to cap).
+        for anom_name, mem in pairs(known) do
+            if #detected >= MAX_RESTRICTIONS_PER_NPC then break end
+            local c_pos = cache_by_name[anom_name]
+            if not c_pos then
+                known[anom_name] = nil
+            else
+                local dist = npc_pos:distance_to(c_pos)
+                if dist <= 2 * radius and dist >= MIN_RESTRICT_DISTANCE then
+                    local already = false
+                    for _, n in ipairs(detected) do
+                        if n == anom_name then already = true; break end
+                    end
+                    if not already then
+                        tinsert(detected, anom_name)
+                        dbg_verbose("MEMORY", "[%s] recalled [%s] (%.1fm)",
+                            npc:name() or "?", anom_name, dist)
+                    end
+                end
+            end
+        end
+
+        -- Record all newly detected anomalies into memory.
+        for _, anom_name in ipairs(detected) do
+            known[anom_name] = { last_seen = current_time }
+        end
+
+        -- Decay: forget anomalies that are far away and stale.
+        for anom_name, mem in pairs(known) do
+            local c_pos = cache_by_name[anom_name]
+            if not c_pos then
+                known[anom_name] = nil
+            elseif npc_pos:distance_to(c_pos) > 2 * radius
+                    and (current_time - mem.last_seen) > mem_decay_ms then
+                known[anom_name] = nil
+                dbg_verbose("MEMORY", "[%s] forgot [%s]", npc:name() or "?", anom_name)
+            end
+        end
+    end
+
     if #detected > 0 then
+        -- Option B -- density-gated engine avoidance. In a SPARSE field, hand routing to the
+        -- engine feel system (CStalkerActionGetOutOfAnomaly): it routes NPCs around EVERY
+        -- anomaly type, unlike add_restrictions which only blocks types whose shape catches
+        -- the navmesh (acidic/electric register inert). Gated to sparse fields because feel's
+        -- freeze (many feelers) and CTD (an enclosed feeler) live in dense/enclosed fields.
+        -- MCM toggle + tunable density threshold.
+        if get_mcm_setting("engine_avoidance", true) then
+            local max_density = get_mcm_setting("engine_feel_max_density", 4)
+            local local_density = 0
+            for _, anom in ipairs(nearby) do
+                if anom.pos and npc_pos:distance_to(anom.pos) <= FEEL_DENSITY_RADIUS then
+                    local_density = local_density + 1
+                    if local_density > max_density then break end
+                end
+            end
+            if local_density <= max_density then
+                -- Sparse: feel ON; drop our (possibly inert) restrictions and let the engine
+                -- route + throw bolts. Stuck backstop -- sprint out if it can't make net
+                -- progress (displacement-based, so circling still trips it).
+                if st.restrictions then clear_npc_restrictions(npc) end
+                set_npc_feel(npc, st, true)
+                if not st.restrict_anchor_pos or not st.restrict_start then
+                    st.restrict_anchor_pos = npc_pos
+                    st.restrict_start      = current_time
+                elseif npc_pos:distance_to(st.restrict_anchor_pos) >= STUCK_PROGRESS_DIST then
+                    st.restrict_anchor_pos = npc_pos
+                    st.restrict_start      = current_time
+                end
+                local feel_stuck_ms = get_mcm_setting("npc_stuck_timeout", 20) * 1000
+                if (current_time - st.restrict_start) > feel_stuck_ms then
+                    commit_push_through(npc, st, "stuck (engine avoidance)")
+                end
+                return
+            end
+        end
+
+        -- Dense field (or engine avoidance off): restriction-based avoidance, feel off.
+        -- Only re-issue when the set changed -- re-applying an identical set every tick
+        -- forces a path rebuild and makes the NPC stutter-step ~every 2s.
+        set_npc_feel(npc, st, false)
+        if not same_restriction_set(detected, st.restrictions) then
+            clear_npc_restrictions(npc)
+            safe_call(npc.add_restrictions, npc, "", tconcat(detected, ","))
+            st.restrictions = detected
+            dbg_verbose("RESTRICT", "[%s] applied %d restrictions", npc:name() or "?", #detected)
+        end
+
+        -- Displacement-based progress: re-anchor and reset the stall timer whenever the
+        -- NPC covers STUCK_PROGRESS_DIST of net ground. An NPC walking in circles changes
+        -- vertex constantly but never gets far from its anchor, so it trips the timeout
+        -- and commits to sprinting through.
+        if not st.restrict_anchor_pos or not st.restrict_start then
+            st.restrict_anchor_pos = npc_pos
+            st.restrict_start      = current_time
+        elseif npc_pos:distance_to(st.restrict_anchor_pos) >= STUCK_PROGRESS_DIST then
+            st.restrict_anchor_pos = npc_pos
+            st.restrict_start      = current_time
+        end
+
+        local stuck_ms = get_mcm_setting("npc_stuck_timeout", 20) * 1000
+        if (current_time - st.restrict_start) > stuck_ms then
+            commit_push_through(npc, st, "stuck routing around")
+        end
+    else
+        -- Failed the rank roll: didn't notice. Clear restrictions/feel and walk through.
+        set_npc_feel(npc, st, false)
         clear_npc_restrictions(npc)
-        
-        local add_str = tconcat(detected, ",")
-        safe_call(npc.add_restrictions, npc, "", add_str)
-        npc_restrictions[id] = detected
-        
-        dbg_verbose("RESTRICT", "[%s] added %d restrictions", npc:name() or "?", #detected)
+        st.restrict_start      = nil
+        st.restrict_anchor_pos = nil
     end
 end
 
@@ -672,7 +993,10 @@ local function on_anomaly_before_activate(zone, obj, flags)
     dbg_log("DAMAGE", "[%s] (%s %s) walked into [%s]", 
         obj:name() or "?", rank, state, zone_name)
     
-    npc_last_anomaly[obj_id] = {
+    local st = npc_state[obj_id]
+    if not st then st = {}; npc_state[obj_id] = st end
+    st.took_damage = true
+    st.last_anomaly = {
         name = zone_name,
         section = zone_section,
         time = time_global(),
@@ -761,7 +1085,7 @@ function get_npc_dmg_mult(npc, anomaly)
     local protection = get_npc_outfit_protection(npc, protection_type)
     local damage_mult = mmax(0, 1.0 - protection)
     
-    dbg_verbose("ARMOR", "[%s] → %s → prot %.2f → mult %.2f",
+    dbg_verbose("ARMOR", "[%s] -> %s -> prot %.2f -> mult %.2f",
         anomaly_section, protection_type, protection, damage_mult)
     
     return damage_mult
@@ -854,27 +1178,31 @@ end
 
 local function check_anomaly_deaths(current_time)
     local to_remove = {}
-    
-    for npc_id, anomaly_info in pairs(npc_last_anomaly) do
-        if (current_time - anomaly_info.time) > ANOMALY_ATTRIBUTION_TIMEOUT then
-            tinsert(to_remove, npc_id)
-        else
-            local npc = level.object_by_id(npc_id)
-            if npc then
-                local alive = safe_call(npc.alive, npc)
-                if not alive and not anomaly_info.reported then
-                    anomaly_info.reported = true
-                    report_anomaly_death(npc, anomaly_info)
+
+    for npc_id, st in pairs(npc_state) do
+        local anomaly_info = st.last_anomaly
+        if anomaly_info then
+            if (current_time - anomaly_info.time) > ANOMALY_ATTRIBUTION_TIMEOUT then
+                tinsert(to_remove, npc_id)
+            else
+                local npc = level.object_by_id(npc_id)
+                if npc then
+                    local alive = safe_call(npc.alive, npc)
+                    if not alive and not anomaly_info.reported then
+                        anomaly_info.reported = true
+                        report_anomaly_death(npc, anomaly_info)
+                        tinsert(to_remove, npc_id)
+                    end
+                else
                     tinsert(to_remove, npc_id)
                 end
-            else
-                tinsert(to_remove, npc_id)
             end
         end
     end
-    
+
     for _, npc_id in ipairs(to_remove) do
-        npc_last_anomaly[npc_id] = nil
+        local st = npc_state[npc_id]
+        if st then st.last_anomaly = nil end
     end
 end
 
@@ -895,16 +1223,14 @@ end
 
 -- [ Main Update Loop ]--
 
-local function on_actor_update()
+local function mai_periodic_tick()
     if not is_mod_enabled() then return end
     if surge_started() then return end
     if not db.actor then return end
     if is_ignore_level() then return end
-    
+
     local current_time = time_global()
-    if current_time < global_update_timer then return end
-    global_update_timer = current_time + UPDATE_INTERVAL
-    
+
     check_anomaly_deaths(current_time)
     ensure_cache()
     
@@ -914,9 +1240,24 @@ local function on_actor_update()
     local actor_pos = get_position_copy(db.actor)
     
     if not actor_pos then return end
-    
+
+    -- Snapshot online stalker positions for the probe's tester election
+    -- (is_cluster_tester). Rebuilt each tick so it reflects current positions.
+    local snap = {}
+    for _, sval in pairs(db.OnlineStalkers or {}) do
+        local sobj = sval
+        if type(sobj) == "number" then sobj = level.object_by_id(sobj) end
+        if is_valid_stalker(sobj) then
+            local p = get_position_copy(sobj)
+            -- db.OnlineStalkers is an index-keyed array, so the table key is NOT the id;
+            -- store the real object id or the id comparison in is_cluster_tester breaks.
+            if p then snap[#snap + 1] = { id = safe_call(sobj.id, sobj), pos = p } end
+        end
+    end
+    tick_npc_positions = snap
+
     local processed = 0
-    
+
     for id, npc in pairs(db.OnlineStalkers or {}) do
         if type(npc) == "number" then
             npc = level.object_by_id(npc)
@@ -932,21 +1273,52 @@ local function on_actor_update()
                     configure_npc_anomaly_interaction(npc)
                 else
                     safe_call(npc.set_enable_anomalies_damage, npc, false)
+                    local st = npc_state[id]
+                    if st then
+                        if st.restrictions then clear_npc_restrictions(npc) end
+                        set_npc_feel(npc, st, false)
+                        if st.push_through and not st.pre_push_run then
+                            safe_call(npc.set_movement_type, npc, move.walk)
+                        end
+                        st.restrict_start      = nil
+                        st.restrict_anchor_pos = nil
+                        st.push_through        = nil
+                        st.pre_push_run        = nil
+                        st.probed              = nil
+                        st.probe_until         = nil
+                    end
                 end
-                
+
                 if within_radius or restrictions_ignore_radius then
                     update_npc_restrictions(npc, detection_radius)
                 end
-                
+
                 processed = processed + 1
             end
         end
     end
-    
+
     if processed > 0 then
-        dbg_verbose("UPDATE", "Processed %d NPCs (cache: %d anomalies)", 
+        dbg_verbose("UPDATE", "Processed %d NPCs (cache: %d anomalies)",
             processed, #anomaly_cache)
     end
+
+    local pushing = 0
+    for _, st in pairs(npc_state) do
+        if st.push_through then pushing = pushing + 1 end
+    end
+    dbg_log("HEARTBEAT", "tick processed=%d pushing=%d cache=%d", processed, pushing, #anomaly_cache)
+end
+
+local function schedule_next_tick()
+    CreateTimeEvent("mai_periodic", "mai_tick", UPDATE_INTERVAL_SEC, function()
+        local ok, err = pcall(mai_periodic_tick)
+        if not ok then
+            printf("[MAI][TICK_FAIL] %s", tostring(err))
+        end
+        ResetTimeEvent("mai_periodic", "mai_tick", UPDATE_INTERVAL_SEC)
+        return false
+    end)
 end
 
 
@@ -1028,6 +1400,19 @@ function rebuild_anomaly_cache_now()
     rebuild_anomaly_cache()
 end
 
+-- True if `pos` is within `radius` meters of any cached anomaly center.
+function is_position_in_anomaly(pos, radius)
+    if not pos then return false end
+    radius = radius or 5
+    ensure_cache()
+    for _, anom in ipairs(anomaly_cache) do
+        if anom.pos and pos:distance_to(anom.pos) <= radius then
+            return true
+        end
+    end
+    return false
+end
+
 
 -- [ Event Callbacks ]--
 
@@ -1048,14 +1433,6 @@ local function schedule_cache_rebuild(reason)
     end)
 end
 
-local function on_surge_end()
-    schedule_cache_rebuild("Surge ended")
-end
-
-local function on_psy_storm_end()
-    schedule_cache_rebuild("Psy-storm ended")
-end
-
 local function on_actor_interaction(typ, obj, name)
     if typ ~= "anomalies" then return end
     
@@ -1068,22 +1445,29 @@ end
 
 local function on_game_load()
     dbg_verbose("EVENT", "Game loaded")
-    
-    safe_call(exec_console_cmd, "ai_die_in_anomaly 1")
-    
+
+    safe_call(exec_console_cmd, "ai_die_in_anomaly 0")
+
     invalidate_cache()
-    npc_last_update = {}
-    npc_restrictions = {}
-    npc_last_anomaly = {}
+    npc_state            = {}
     anomaly_protection_cache = {}
+    pcall_failures_seen  = {}
+
+    -- Bootstrap (or re-arm) the periodic tick. RemoveTimeEvent first so a stale chain from
+    -- a prior session/level doesn't double-fire alongside the new one.
+    RemoveTimeEvent("mai_periodic", "mai_tick")
+    schedule_next_tick()
 end
 
 local function on_level_changed()
     dbg_verbose("EVENT", "Level changed")
     invalidate_cache()
-    npc_last_update = {}
-    npc_restrictions = {}
-    npc_last_anomaly = {}
+    npc_state            = {}
+    pcall_failures_seen  = {}
+
+    -- The actor_on_first_update hook will re-arm the timer on the new level via on_game_load.
+    -- Drop the existing chain so it doesn't fire against a half-loaded level.
+    RemoveTimeEvent("mai_periodic", "mai_tick")
 end
 
 local function on_npc_net_destroy(npc)
@@ -1101,9 +1485,7 @@ local function on_npc_net_destroy(npc)
         return
     end
     
-    npc_last_update[id] = nil
-    npc_restrictions[id] = nil
-    npc_last_anomaly[id] = nil
+    npc_state[id] = nil
 end
 
 local function on_npc_net_spawn(npc)
@@ -1136,16 +1518,13 @@ end
 
 function on_game_start()
     update_mcm_cache()
-    
-    RegisterScriptCallback("actor_on_update", on_actor_update)
+
     RegisterScriptCallback("on_option_change", on_option_change)
     RegisterScriptCallback("npc_on_net_destroy", on_npc_net_destroy)
     RegisterScriptCallback("npc_on_net_spawn", on_npc_net_spawn)
     RegisterScriptCallback("anomaly_on_before_activate", on_anomaly_before_activate)
     RegisterScriptCallback("npc_on_before_hit", on_npc_before_hit)
     RegisterScriptCallback("actor_on_interaction", on_actor_interaction)
-    RegisterScriptCallback("surge_manager_end_surge", on_surge_end)
-    RegisterScriptCallback("psi_storm_manager_end_storm", on_psy_storm_end)
     RegisterScriptCallback("on_game_load", on_game_load)
     RegisterScriptCallback("actor_on_first_update", on_game_load)
     RegisterScriptCallback("on_level_changing", on_level_changed)

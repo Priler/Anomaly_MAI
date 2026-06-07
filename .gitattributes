@@ -1,2 +1,6 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# X-Ray engine scripts are Lua; tell GitHub Linguist so .script files get
+# Lua syntax highlighting on the web view and in language stats.
+*.script linguist-language=Lua
