@@ -1505,6 +1505,13 @@ function is_position_in_anomaly(pos, radius)
     return false
 end
 
+-- True if NPC `id` is currently committed to sprinting through an anomaly field.
+-- Used by loot_guard to suppress corpse-detection while the NPC is pushing out.
+function is_npc_in_push_through(id)
+    local st = id and npc_state[id]
+    return st ~= nil and st.push_through == true
+end
+
 
 -- [ Event Callbacks ]--
 

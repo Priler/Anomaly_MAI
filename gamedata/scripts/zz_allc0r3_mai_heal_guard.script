@@ -1,0 +1,156 @@
+-- MAI Heal-in-Anomaly Guard
+-- Blocks NPC heal actions from running while the NPC is inside an anomaly's damage
+-- radius. Covers two sources:
+--   1. axr_otheal scheme (NPC Limping and Healing mod) -- medic heals a teammate.
+--   2. xr_eat_medkit.consume_medkit (vanilla self-heal, plus AlifeTactics's
+--      replacement which adds npc:movement_enabled(false) + set_desired_position()
+--      + clear_animations() on the first heal tick -- traps the NPC for ~6s).
+--
+-- Why: anomaly-safety in both schemes relies on the GOAP world_property
+-- stalker_ids.property_anomaly, which is only TRUE when the engine actively sensed
+-- an anomaly via FEEL (set_enable_anomalies_pathfinding). MAI turns FEEL OFF for
+-- push_through NPCs and non-elected feelers, so the property stays FALSE even when
+-- the NPC is standing in a thermal. The heal action passes its precondition, locks
+-- movement, and the NPC dies in the zone.
+--
+-- How:
+--   * axr_otheal: monkey-patch evaluator_npc_otheal:evaluate (returns false in
+--     anomaly so GOAP never chooses heal) plus action_npc_otheal:execute as a
+--     defensive catch that undoes the movement lock and clears heal state.
+--   * xr_eat_medkit: wrap consume_medkit. It's the single choke point both vanilla
+--     and AlifeTactics-patched self-heal go through; blocking here stops the
+--     heal_hp / heal_bleed chain from starting and therefore stops AlifeTactics's
+--     movement_enabled(false) lock from ever firing.
+
+
+-- Margin (meters) for "in damage radius" -- matches MIN_RESTRICT_DISTANCE in the main
+-- script so the guard fires the same range push_through does.
+local HEAL_BLOCK_RADIUS = 4
+
+local installed = false
+
+
+local function safe_call(func, ...)
+    local ok, result = pcall(func, ...)
+    if ok then return result end
+    return nil
+end
+
+local function debug_enabled()
+    return zz_allc0r3_mai_main and zz_allc0r3_mai_main.is_debug_enabled
+        and zz_allc0r3_mai_main.is_debug_enabled() or false
+end
+
+local function log(format, ...)
+    printf("[%s][MAI][HEAL_GUARD] %s", time_global(), string.format(format, ...))
+end
+
+local function npc_in_anomaly(npc)
+    if not npc then return false end
+    if not zz_allc0r3_mai_main or not zz_allc0r3_mai_main.is_position_in_anomaly then
+        return false
+    end
+    local pos = safe_call(npc.position, npc)
+    if not pos then return false end
+    return zz_allc0r3_mai_main.is_position_in_anomaly(pos, HEAL_BLOCK_RADIUS)
+end
+
+
+local function install_self_heal_guard()
+    if not xr_eat_medkit or not xr_eat_medkit.consume_medkit then
+        log("xr_eat_medkit.consume_medkit unavailable; self-heal guard skipped")
+        return
+    end
+    local orig = xr_eat_medkit.consume_medkit
+    xr_eat_medkit.consume_medkit = function(npc, medkit, kind)
+        if npc_in_anomaly(npc) then
+            if debug_enabled() then
+                log("[%s] blocked self-heal (%s, inside anomaly)",
+                    npc and npc:name() or "?", tostring(kind))
+            end
+            return  -- medkit isn't consumed (orig's alife_release_id never runs)
+        end
+        return orig(npc, medkit, kind)
+    end
+    log("Self-heal anomaly guard installed (xr_eat_medkit.consume_medkit)")
+end
+
+
+local function install()
+    if installed then return end
+
+    -- Self-heal guard installs independently of axr_otheal -- vanilla xr_eat_medkit
+    -- is always present, so this runs even when the NPC Limping and Healing mod
+    -- isn't installed.
+    install_self_heal_guard()
+
+    if not axr_otheal then
+        log("axr_otheal not loaded; otheal guard disabled (heal mod not installed)")
+        installed = true
+        return
+    end
+    if not axr_otheal.evaluator_npc_otheal or not axr_otheal.action_npc_otheal then
+        log("axr_otheal classes missing; otheal guard disabled")
+        installed = true
+        return
+    end
+
+    -- Hook A: evaluator. Return false when in anomaly so GOAP never chooses the heal
+    -- action while the NPC is in a zone.
+    local orig_evaluate = axr_otheal.evaluator_npc_otheal.evaluate
+    if not orig_evaluate then
+        log("evaluate missing on evaluator_npc_otheal; guard disabled")
+        return
+    end
+
+    axr_otheal.evaluator_npc_otheal.evaluate = function(self)
+        if npc_in_anomaly(self.object) then
+            if debug_enabled() then
+                log("[%s] blocked heal eval (inside anomaly)",
+                    self.object and self.object:name() or "?")
+            end
+            return false
+        end
+        return orig_evaluate(self)
+    end
+
+    -- Hook B: action execute. Defensive catch for the window between when the action
+    -- starts and when GOAP re-evaluates after our evaluator hook returns false. If
+    -- execute fires while the NPC is in an anomaly, undo the movement lock, clear the
+    -- timer + selected_med so the original logic doesn't pick up mid-heal next tick,
+    -- clear db.storage.healing, and break the heal animation via state_mgr.
+    local orig_execute = axr_otheal.action_npc_otheal.execute
+    if orig_execute then
+        axr_otheal.action_npc_otheal.execute = function(self)
+            local npc = self.object
+            if npc_in_anomaly(npc) then
+                safe_call(npc.movement_enabled, npc, true)
+                safe_call(npc.clear_animations, npc)
+                self.st._timer = nil
+                self.st.selected_id = nil
+                self.st.selected_med = nil
+                local id = safe_call(npc.id, npc)
+                if id and db.storage[id] then
+                    db.storage[id].healing = false
+                end
+                if state_mgr and state_mgr.set_state then
+                    state_mgr.set_state(npc, "patrol")
+                end
+                if debug_enabled() then
+                    log("[%s] aborted heal action (inside anomaly)",
+                        npc and npc:name() or "?")
+                end
+                return
+            end
+            return orig_execute(self)
+        end
+    end
+
+    installed = true
+    log("Heal-in-anomaly guard installed")
+end
+
+
+function on_game_start()
+    install()
+end

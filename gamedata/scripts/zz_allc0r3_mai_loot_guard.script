@@ -17,6 +17,17 @@ local LOOT_BLOCK_RADIUS = 5
 
 local installed = false
 
+-- Persistent local blacklist of corpse IDs that have been blocked at least once.
+-- xr_corpse_detection.set_valuable_loot(id, false) alone is insufficient because
+-- other mods reset HasValuableLoot[id] = true (e.g. More_Aggressive_NPC_Looting's
+-- on_item_take callback fires on corpse death-drops, on_death_callback re-runs,
+-- on_pstor_load_all, etc.). Without an MAI-side latch the NPC re-targets the same
+-- in-anomaly corpse every 2s, walks toward it, hits the guard, stops, re-plans,
+-- repeats forever -- the "stutter at perimeter" symptom. Anomaly positions don't
+-- move; once a corpse is in a damage zone it stays in one, so an unbounded latch
+-- is correct.
+local mai_corpse_blacklist = {}
+
 
 local function get_mcm_enabled()
     if zz_allc0r3_mai_mcm and zz_allc0r3_mai_mcm.get_config then
@@ -36,6 +47,13 @@ end
 local function debug_enabled()
     return zz_allc0r3_mai_main and zz_allc0r3_mai_main.is_debug_enabled
         and zz_allc0r3_mai_main.is_debug_enabled() or false
+end
+
+local function is_npc_in_push_through(id)
+    if zz_allc0r3_mai_main and zz_allc0r3_mai_main.is_npc_in_push_through then
+        return zz_allc0r3_mai_main.is_npc_in_push_through(id)
+    end
+    return false
 end
 
 local function log(format, ...)
@@ -58,6 +76,26 @@ local function install()
         return
     end
 
+    -- Block the evaluator entirely while the NPC is in push_through. Without this,
+    -- find_valid_target keeps re-selecting the same in-anomaly corpse every ~0.5-1s
+    -- (orig succeeds, our guard wipes, GOAP re-plans, repeat). Each re-plan walks the
+    -- NPC a few steps toward the corpse before our wipe lands, which means he keeps
+    -- accumulating damage even though push_through is "active." Returning false here
+    -- stops corpse-detection from being picked as the active GOAP action at all so
+    -- the rush flag / force-evict can actually move him.
+    local orig_evaluate = cls.evaluate
+    if orig_evaluate then
+        cls.evaluate = function(self)
+            if get_mcm_enabled() and self.object then
+                local ok, id = pcall(self.object.id, self.object)
+                if ok and id and is_npc_in_push_through(id) then
+                    return false
+                end
+            end
+            return orig_evaluate(self)
+        end
+    end
+
     cls.find_valid_target = function(self)
         if not get_mcm_enabled() then
             return orig(self)
@@ -67,17 +105,23 @@ local function install()
         if not result then return false end
         if not self.a then return result end
 
-        local target_pos = self.a.vertex_position or self.a.nearest_corpse_position
-        if not target_pos then return result end
-
-        if not is_position_in_anomaly(target_pos) then return result end
-
         local picked_id = self.a.selected_corpse_id
 
+        local target_pos = self.a.vertex_position or self.a.nearest_corpse_position
+        local in_anomaly = target_pos and is_position_in_anomaly(target_pos)
+        local blacklisted = picked_id and mai_corpse_blacklist[picked_id]
+
+        if not (in_anomaly or blacklisted) then return result end
+
         -- Mark the corpse unlootable for every NPC. Anomaly positions don't move,
-        -- so the block persists for the corpse's lifetime.
-        if picked_id and xr_corpse_detection.set_valuable_loot then
-            xr_corpse_detection.set_valuable_loot(picked_id, false)
+        -- so the block persists for the corpse's lifetime. We also stamp our own
+        -- mai_corpse_blacklist so subsequent calls block even if another mod resets
+        -- HasValuableLoot[id] = true between intercepts.
+        if picked_id then
+            mai_corpse_blacklist[picked_id] = true
+            if xr_corpse_detection.set_valuable_loot then
+                xr_corpse_detection.set_valuable_loot(picked_id, false)
+            end
         end
 
         -- Release the claim and clear the commit so the engine won't path here.
@@ -88,6 +132,30 @@ local function install()
         self.a.vertex_id = nil
         self.a.vertex_position = nil
         self.a.state = nil
+
+        -- Clear the engine's desired_position. action_search_corpse:initialize/execute calls
+        -- send_to_nearest_accessible_vertex which sets the NPC's desired_position to the
+        -- corpse vertex. Even after we wipe the GOAP storage above, the NPC keeps walking
+        -- toward that vertex until it arrives or another action overrides. If the vertex is
+        -- inside the anomaly, the NPC walks straight in and dies. Clearing desired_position
+        -- here stops the in-flight walk; GOAP picks a new action next Think.
+        if self.object then
+            local ok, err = pcall(self.object.set_desired_position, self.object)
+        end
+
+        -- Reactive break for the mid-action case: if the NPC already walked to the
+        -- corpse vertex and is locked in search_corpse / field_dress (the 15-second
+        -- loot-pose timer in action_search_corpse:execute), the preventive clear above
+        -- isn't enough -- the action stays "running" and re-asserts the standing pose
+        -- on its next execute. Drop the timer and force-break the state so GOAP
+        -- re-plans and MAI's push_through rush_to_target can actually move the NPC.
+        if self.object and state_mgr and state_mgr.get_state then
+            local current = state_mgr.get_state(self.object)
+            if current == "search_corpse" or current == "field_dress" then
+                self.a.__stimer = nil
+                state_mgr.set_state(self.object, "patrol")
+            end
+        end
 
         if debug_enabled() then
             log("[%s] blocked corpse %s (inside anomaly)",
