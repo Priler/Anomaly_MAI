@@ -1,3 +1,5 @@
+-- Part of PR #1 merge (AI slop coded but works so fuck it)
+--
 -- MAI Heal-in-Anomaly Guard
 -- Blocks NPC heal actions from running while the NPC is inside an anomaly's damage
 -- radius. Covers two sources:

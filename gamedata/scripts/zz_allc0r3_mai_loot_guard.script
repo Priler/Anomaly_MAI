@@ -1,3 +1,5 @@
+-- Part of PR #1 merge (AI slop coded but works so fuck it)
+--
 -- MAI Corpse-Loot Guard
 -- Blocks NPC loot AI from selecting corpses inside anomaly fields.
 --

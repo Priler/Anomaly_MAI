@@ -49,3 +49,4 @@ _untracked/
 # OS
 Thumbs.db
 .DS_Store
+/*.zip

@@ -1,5 +1,11 @@
 -- MAI (Mutant/Anomaly Interaction) by Priler
--- original idea/mod by AllC0r3, version 2.6
+-- original idea/mod by AllC0r3
+
+-- MAI tries to make this work by introducing a complex pathfinding restrictions,
+-- damage formula system, NPCs protection (armor based as well), rolls (hello DnD),
+-- and much, much more.
+--
+-- WIP
 
 
 -- [ Local Aliases ]--
@@ -35,38 +41,41 @@ local cached_show_debug_anomalies = false
 
 local debug_anomalies_shown = false
 
--- Per-NPC state. All fields are optional; the table entry is created on first access and
--- deleted on net_destroy. Fields: last_update, last_anomaly, known_anomalies,
--- restrictions, restrict_start, restrict_anchor_pos, push_through, pre_push_run,
--- feel_on, probed, probe_until, took_damage.
+-- Optional state tracking for each NPC.
+-- Created on first access and deleted during net_destroy.
+-- Fields:
+--   last_update, last_anomaly, known_anomalies, restrictions,
+--   restrict_start, restrict_anchor_pos, push_through, pre_push_run,
+--   feel_on, probed, probe_until, took_damage.
 local npc_state = {}
 
 local ANOMALY_ATTRIBUTION_TIMEOUT = 5000
--- Cap on how many distinct anomalies an NPC restricts (and remembers) at once. Higher =
--- more complete avoidance in dense clusters (it can block a whole cluster and route around
--- it) instead of leaving gaps it walks through. Cost: enclosure risk -- IN-list restrictors
--- carve forbidden regions out of the navmesh (engine: accessible(v) = not_inside(IN_region)),
--- so a ring of avoid-zones around an NPC can leave no accessible vertex and CTD the movement
--- manager in setup_movement_params. Kept deliberately low: nearby anomalies are sorted
--- closest-first (get_nearby_anomalies), so the budget already spends on the most imminent
--- threats, and a tighter cap shrinks the enclosure window between detection and the
--- push-through escape (which only fires after npc_stuck_timeout). Guards: MIN_RESTRICT_DISTANCE
--- (the NPC's own tile is never blocked) + push-through (drops all restrictions once stuck).
+
+-- Max concurrent anomaly restrictions per NPC.
+-- Higher values improve routing around dense clusters, but risk "enclosure" CTDs
+-- (surrounding avoid-zones removing all valid navmesh).
+-- Kept low deliberately because:
+--   1. Threats are sorted closest-first, so a small budget handles immediate danger.
+--   2. It minimizes enclosure risk alongside existing safeguards (MIN_RESTRICT_DISTANCE 
+--      and the stuck-timeout push-through).
 local MAX_RESTRICTIONS_PER_NPC = 12
--- An anomaly this close (meters from center) counts as "already inside": the NPC
--- can't usefully route around it, so it isn't treated as a fresh detection -- the
--- push-through path handles getting it out instead.
+
+-- Distance threshold in meters for considering an NPC inside an anomaly.
+-- At this range:
+-- 1. Routing around is useless, so it is ignored as a new detection.
+-- 2. The standard push-through path handles the escape instead.
 local MIN_RESTRICT_DISTANCE = 4
--- Net distance (meters) an avoiding NPC must travel from where it started routing
--- around before it counts as having made progress. Measured as straight-line
--- displacement, not path length, so an NPC walking in circles (lots of motion, no
--- net displacement) never clears this and trips the stuck timer.
+
+-- Minimum net distance in meters an NPC must move to register progress during avoidance.
+-- Key details:
+-- 1. Measured by straight line displacement, not total path length.
+-- 2. Prevents infinite circling by ensuring lack of real movement triggers the stuck timer.
 local STUCK_PROGRESS_DIST = 8
--- Option B (density-gated engine avoidance): radius (meters) used to gauge how crowded an
--- NPC's local anomaly field is. At/under the MCM "engine_feel_max_density" count within
--- this radius the field counts as SPARSE and we hand routing to the engine feel system
--- (which avoids all anomaly types); above it the field is DENSE and we stay on restrictions
--- + push-through, because feel's freeze/CTD live in dense/enclosed fields.
+
+-- Radius in meters for checking local anomaly density.
+-- Determines the routing behavior based on the MCM max density setting:
+-- 1. Sparse fields: Hands routing to the engine feel system to avoid all anomalies.
+-- 2. Dense fields: Keeps using restrictions and push-through to prevent engine freezes and CTDs.
 local FEEL_DENSITY_RADIUS = 12
 
 local pcall_failures_seen = {}
@@ -163,7 +172,7 @@ local function diag_log(category, format, ...)
 end
 
 
--- [ Arrival Mod Compatibility ]--
+-- [ Arrival Compatibility ]--
 
 local arrival_checked = false
 local arrival_loaded = false
@@ -820,11 +829,12 @@ local tick_npc_positions = {}
 -- O(#anomaly_cache) table per NPC per tick (was done twice per NPC in update_npc_restrictions).
 local tick_cache_by_name = {}
 
--- Elect a single bolt-prober per local cluster: an NPC is the tester only if no
--- lower-id stalker sits within `radius` of it. A lone NPC always qualifies; in a crowd
--- exactly one (the lowest id) does. Because any two testers must each be the lowest in
--- their own neighborhood, electeds are always >`radius` apart -- so feelers never share
--- a field, which is what kept the multi-feeler contention freeze at bay.
+-- Assigns a single bolt prober per local cluster to prevent engine freezes.
+-- An NPC qualifies only if no stalker with a lower ID is within the radius.
+-- Key results:
+-- 1. A lone NPC always qualifies.
+-- 2. In crowds, only the lowest ID qualifies.
+-- 3. Probers are always separated by at least the radius distance, avoiding multiple feeler conflicts.
 local function is_cluster_tester(self_id, self_pos, radius)
     for i = 1, #tick_npc_positions do
         local e = tick_npc_positions[i]
@@ -835,10 +845,13 @@ local function is_cluster_tester(self_id, self_pos, radius)
     return true
 end
 
--- Set the per-NPC engine anomaly-feel flag, deduped via st.feel_on so we don't spam the
--- engine each tick. ON = NPC throws bolts and the engine routes it out; OFF = pure
--- restriction routing. Owned solely here so configure_npc_anomaly_interaction can't stomp
--- an active probe between this function's throttled runs.
+-- Sets the engine anomaly feel flag for the NPC.
+-- Deduped using st.feel_on to prevent spamming the engine every tick.
+-- States:
+-- 1. ON: NPC throws bolts and the engine handles routing.
+-- 2. OFF: Uses pure restriction routing.
+-- Managed exclusively here to prevent configure_npc_anomaly_interaction 
+-- from overwriting an active probe during throttled updates.
 local function set_npc_feel(npc, st, on)
     if st.feel_on == on then return end
     safe_call(npc.set_enable_anomalies_pathfinding, npc, on)
@@ -914,20 +927,25 @@ local function update_npc_restrictions(npc, detection_radius)
         return
     end
 
-    -- Push-through: the NPC has committed to crossing. Restrictions/feel were already
-    -- dropped on commit. Don't re-command run every tick: a free NPC keeps the run set on
-    -- commit, while a scheme-driven (squad) NPC reverts to walk between ticks regardless,
-    -- so re-issuing run each tick only flickers its run animation. Just keep it unboxed.
+    -- Push through state where the NPC has committed to crossing.
+    -- Restrictions and feel systems are already disabled.
+    -- We avoid reissuing the run command every tick because:
+    -- 1. Free NPCs maintain their run state automatically.
+    -- 2. Scheme driven squad NPCs revert to walking between ticks anyway.
+    -- 3. Spamming the run command just causes animation flickering.
+    -- The only requirement here is to keep the NPC unrestricted.
     if st.push_through then
         if st.restrictions then clear_npc_restrictions(npc) end
         set_npc_feel(npc, st, false)
         return
     end
 
-    -- In contact: took an anomaly hit since the last update. Don't probe or route -- you
-    -- don't throw bolts while burning. Commit to sprinting out. A boolean (cleared on
-    -- read) rather than a time window, so bursty/intermittent anomaly damage can't slip
-    -- through between the ~2s update ticks.
+    -- NPC took anomaly damage since the last update.
+    -- Behavior during contact:
+    -- 1. Stops routing and probing.
+    -- 2. Commits to sprinting out immediately.
+    -- Uses a boolean flag cleared on read instead of a time window. This ensures 
+    -- intermittent damage is not missed between the two second update ticks.
     if st.took_damage then
         st.took_damage = nil
         commit_push_through(npc, st, "in contact")
@@ -1031,12 +1049,12 @@ local function update_npc_restrictions(npc, detection_radius)
     end
 
     if #detected > 0 then
-        -- Option B -- density-gated engine avoidance. In a SPARSE field, hand routing to the
-        -- engine feel system (CStalkerActionGetOutOfAnomaly): it routes NPCs around EVERY
-        -- anomaly type, unlike add_restrictions which only blocks types whose shape catches
-        -- the navmesh (acidic/electric register inert). Gated to sparse fields because feel's
-        -- freeze (many feelers) and CTD (an enclosed feeler) live in dense/enclosed fields.
-        -- MCM toggle + tunable density threshold.
+        -- Density gated engine avoidance controlled via an MCM toggle and threshold.
+        -- Behavior based on local density:
+        -- 1. Sparse fields: Hands routing to the engine feel system (CStalkerActionGetOutOfAnomaly). 
+        --    This successfully routes around all anomaly types, bypassing the navmesh limitations 
+        --    of add_restrictions.
+        -- 2. Dense fields: Avoids the feel system to prevent multi prober freezes and enclosure CTDs.
         if get_mcm_setting("engine_avoidance", true) then
             local max_density = get_mcm_setting("engine_feel_max_density", 4)
             local local_density = 0
@@ -1078,10 +1096,11 @@ local function update_npc_restrictions(npc, detection_radius)
             dbg_verbose("RESTRICT", "[%s] applied %d restrictions", npc:name() or "?", #detected)
         end
 
-        -- Displacement-based progress: re-anchor and reset the stall timer whenever the
-        -- NPC covers STUCK_PROGRESS_DIST of net ground. An NPC walking in circles changes
-        -- vertex constantly but never gets far from its anchor, so it trips the timeout
-        -- and commits to sprinting through.
+        -- Tracks progress based on net displacement.
+        -- The stall timer resets only when the NPC moves STUCK_PROGRESS_DIST from its anchor.
+        -- Key results:
+        -- 1. NPCs making actual progress reset their timer.
+        -- 2. NPCs walking in circles will time out and commit to sprinting through.
         if not st.restrict_anchor_pos or not st.restrict_start then
             st.restrict_anchor_pos = npc_pos
             st.restrict_start      = current_time
@@ -1347,14 +1366,6 @@ end
 
 -- Temporary map marker for an anomaly-killed corpse. Stock "red_location" spot type
 -- (configs/ui/map_spots.xml) so no custom spot XML is needed.
---
--- SERIALIZED: a fresh corpse is online only for a moment, then alife pushes it offline.
--- The non-serialized map_add_object_spot silently no-ops on (or drops on transition to)
--- an offline object, so the spot never renders even though the add "succeeds". The _ser
--- variant pins onto the offline object and is the path base game uses for offline targets
--- (treasure_manager). Tradeoff: the spot now enters the save, and the removal time-event
--- below does NOT survive save/load -- a marker pending at save time is orphaned on reload.
--- The MCM "cleanup_map_markers" sweep removes stray red_location spots to cover that case.
 local DEATH_SPOT_TYPE         = "red_location"
 local DEATH_SPOT_DURATION_SEC = 300   -- 5 minutes
 
@@ -1458,7 +1469,7 @@ local function mai_periodic_tick()
     for _, c in ipairs(anomaly_cache) do cbn[c.name] = c.pos end
     tick_cache_by_name = cbn
 
-    -- Bubble gate: when enabled, only NPCs within bubble_radius of the actor interact with
+    -- Bubble gate (S2 inspired): when enabled, only NPCs within bubble_radius of the actor interact with
     -- anomalies (damage on per rules); those outside have anomaly damage forced off and their
     -- avoidance state cleared. When disabled, every online stalker is treated as inside.
     local bubble_enabled = get_mcm_setting("bubble_enabled", true)
