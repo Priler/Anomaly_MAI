@@ -21,6 +21,7 @@ local defaults = {
     bubble_radius = 150,
     restrictions_ignore_radius = true,
     anomaly_memory_decay = 30,
+    legacy_anomaly_ignores = true,
 
     -- avoidance
     npc_stuck_timeout = 40,
@@ -54,6 +55,7 @@ local defaults = {
 
     -- anomaly kill rate limit (0 = unlimited; cap = max kills/min for that group)
     kill_rate_limit = true,
+    kill_cap_global = 0,
     kill_cap_faction_stalker = 0,
     kill_cap_faction_bandit = 0,
     kill_cap_faction_dolg = 0,
@@ -96,7 +98,8 @@ end
 assign_group("general",   { "mod_enabled", "debug_mode", "verbose_debug", "show_debug_anomalies",
                             "cleanup_map_markers", "debug_death_news", "debug_death_map_spot" })
 assign_group("detection", { "base_detection_radius", "cache_rebuild_delay", "bubble_enabled",
-                            "bubble_radius", "restrictions_ignore_radius", "anomaly_memory_decay" })
+                            "bubble_radius", "restrictions_ignore_radius", "anomaly_memory_decay",
+                            "legacy_anomaly_ignores" })
 assign_group("avoidance", { "npc_stuck_timeout", "engine_avoidance", "engine_feel_max_density" })
 assign_group("damage",    { "enable_armor_damage_mult", "immune_zero_miss_chance", "combat_only_damage",
                             "block_anomalies_on_corpses", "block_corpse_loot_in_anomalies" })
@@ -105,7 +108,7 @@ assign_group("movement",  { "walking_immunity", "safe_grace_period", "standing_m
 assign_group("ranks",     { "rank_novice_miss_chance", "rank_trainee_miss_chance", "rank_experienced_miss_chance",
                             "rank_professional_miss_chance", "rank_veteran_miss_chance", "rank_expert_miss_chance",
                             "rank_master_miss_chance", "rank_legend_miss_chance" })
-assign_group("killrate",  { "kill_rate_limit",
+assign_group("killrate",  { "kill_rate_limit", "kill_cap_global",
                             "kill_cap_faction_stalker", "kill_cap_faction_bandit", "kill_cap_faction_dolg",
                             "kill_cap_faction_freedom", "kill_cap_faction_monolith", "kill_cap_faction_army",
                             "kill_cap_faction_ecolog", "kill_cap_faction_killer", "kill_cap_faction_greh",
@@ -177,6 +180,7 @@ function on_mcm_load()
                 { id = "bubble_radius",         type = "track", val = 2, min = 50, max = 500, step = 25, def = 150 },
                 { id = "restrictions_ignore_radius", type = "check", val = 1, def = true },
                 { id = "anomaly_memory_decay",  type = "track", val = 2, min = 0, max = 120, step = 10, def = 30 },
+                { id = "legacy_anomaly_ignores", type = "check", val = 1, def = true },
             }),
 
             subcategory("avoidance", "ui_mcm_mai_pathfinding_title", {
@@ -215,6 +219,7 @@ function on_mcm_load()
 
             subcategory("killrate", "ui_mcm_mai_kill_rate_title", {
                 { id = "kill_rate_limit", type = "check", val = 1, def = true },
+                { id = "kill_cap_global", type = "track", val = 2, min = 0, max = 50, step = 1, def = 0 },
 
                 { id = "kill_cap_faction_stalker",  type = "track", val = 2, min = 0, max = 50, step = 1, def = 0 },
                 { id = "kill_cap_faction_bandit",   type = "track", val = 2, min = 0, max = 50, step = 1, def = 0 },

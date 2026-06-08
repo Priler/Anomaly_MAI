@@ -1,9 +1,19 @@
 --[[
-    MAI Anomalies Settings - List of anomalies to always ignore
+    MAI Anomalies Settings - lists of anomalies NPCs should ignore.
     Part of MAI (Mutant/Anomaly Interaction) by AllC0r3
 
-    This file contains anomalies that NPCs should always ignore.
-    Includes both section patterns and specific anomaly names.
+    Two tables:
+      mai_always_ignore_anom - always skipped. Section patterns that should never be
+        treated as avoidable fields (campfires, radiation, psi, mines, teleports, etc.)
+        plus specific anomalies that have no usable radius (skipping them prevents errors
+        in the cache / restriction math). Never un-ignore these.
+      mai_legacy_ignore_anom - per-location fields that were hardcoded back when the
+        avoidance pipeline could not route NPCs around dense/enclosed clusters without
+        freezing or crashing. With restriction routing + push-through + force-evict +
+        loot guard, NPCs can likely handle these now, so they are gated behind the MCM
+        "Legacy hardcoded ignores" toggle (default on). Turn the toggle off to let MAI
+        manage these fields (avoid, suppress damage, and let the loot guard see corpses
+        that fall inside them).
 --]]
 
 mai_always_ignore_anom = {
@@ -73,6 +83,12 @@ mai_always_ignore_anom = {
     "red_zone_mine_thermal_strong_0000",
     "red_zone_mine_thermal_strong_0023",
     "red_zone_mine_thermal_strong_0003",
+}
+
+-- Gated behind the MCM "Legacy hardcoded ignores" toggle (default on). These are
+-- per-location fields hardcoded when avoidance could not safely route around them.
+-- Test the new pipeline at each site before relying on the toggle being off.
+mai_legacy_ignore_anom = {
 
     -- ### SPECIFIC ANOMALY NAMES (by location)
 

@@ -196,16 +196,10 @@ end
 local ignored_anomalies_hash = nil
 local ignored_anomalies_patterns = nil
 
-local function init_ignored_anomalies()
-    if ignored_anomalies_hash then return end
-    
-    ignored_anomalies_hash = {}
-    ignored_anomalies_patterns = {}
-    
-    if not zz_allc0r3_mai_anomalies_settings then return end
-    local t = zz_allc0r3_mai_anomalies_settings.mai_always_ignore_anom
+-- Sort a flat ignore list into exact-name hash entries (those ending in _<digits>) and
+-- substring patterns (everything else, matched with sf in is_always_skip_anomaly).
+local function ingest_ignore_list(t)
     if not t then return end
-    
     for i = 1, #t do
         local entry = t[i]
         if entry:match("_%d+$") then
@@ -213,6 +207,23 @@ local function init_ignored_anomalies()
         else
             tinsert(ignored_anomalies_patterns, entry)
         end
+    end
+end
+
+local function init_ignored_anomalies()
+    if ignored_anomalies_hash then return end
+
+    ignored_anomalies_hash = {}
+    ignored_anomalies_patterns = {}
+
+    if not zz_allc0r3_mai_anomalies_settings then return end
+
+    ingest_ignore_list(zz_allc0r3_mai_anomalies_settings.mai_always_ignore_anom)
+
+    -- Per-location hardcoded fields are optional: with the toggle off, MAI manages them
+    -- (avoid / suppress damage / loot guard sees corpses there) instead of skipping them.
+    if get_mcm_setting("legacy_anomaly_ignores", true) then
+        ingest_ignore_list(zz_allc0r3_mai_anomalies_settings.mai_legacy_ignore_anom)
     end
 end
 
@@ -425,27 +436,34 @@ end
 -- already reached its cap inside the window. Cap 0 = unlimited. Kills are recorded only on
 -- confirmed, attributed deaths (check_anomaly_deaths); the gate below reads the counts.
 local KILL_WINDOW_MS   = 60000   -- 1 minute rolling window
+local kill_log_global  = {}      -- flat array of every confirmed anomaly-death stamp (universal cap)
 local kill_log_faction = {}      -- community id keyed to an array of death time_global() stamps
 local kill_log_rank    = {}      -- rank name keyed to an array of death time_global() stamps
 
--- Count log entries newer than the window for `key`, pruning stale entries.
+-- Prune a flat timestamp list to the window and return (count, list_or_nil).
 -- Stamps are appended in time_global order (monotonic within a session), so list[1] is the
--- oldest: if it is still fresh, nothing is stale and we return the length with no allocation.
--- Only when the head is stale do we compact into a new table.
-local function count_recent_kills(log, key, now)
-    local list = log[key]
-    if not list then return 0 end
+-- oldest: if it is still fresh, nothing is stale and we return the same list with no alloc.
+-- Only when the head is stale do we compact into a new table (nil when nothing survives).
+local function prune_count(list, now)
+    if not list or list[1] == nil then return 0, nil end
     local cutoff = now - KILL_WINDOW_MS
-    if list[1] >= cutoff then return #list end
+    if list[1] >= cutoff then return #list, list end
     local kept = {}
     for i = 1, #list do
         if list[i] >= cutoff then kept[#kept + 1] = list[i] end
     end
-    log[key] = (#kept > 0) and kept or nil
-    return #kept
+    return #kept, (#kept > 0) and kept or nil
+end
+
+-- Count recent entries for `key` in a keyed log, writing back the pruned list.
+local function count_recent_kills(log, key, now)
+    local n, kept = prune_count(log[key], now)
+    log[key] = kept
+    return n
 end
 
 local function record_anomaly_kill(community, rank, now)
+    kill_log_global[#kill_log_global + 1] = now
     if community then
         local l = kill_log_faction[community]
         if not l then l = {}; kill_log_faction[community] = l end
@@ -464,6 +482,14 @@ end
 -- Returns false when the master toggle is off or both relevant caps are 0 (unlimited).
 local function kill_cap_reached(community, rank, now)
     if not get_mcm_setting("kill_rate_limit", true) then return false end
+    -- Universal cap: total confirmed anomaly kills in the window across everyone. Hit it and
+    -- all NPCs are protected (no anomaly damage) until the rolling window frees up.
+    local gcap = get_mcm_setting("kill_cap_global", 0)
+    if gcap > 0 then
+        local n, kept = prune_count(kill_log_global, now)
+        kill_log_global = kept or {}
+        if n >= gcap then return true, "global" end
+    end
     if community then
         local cap = get_mcm_setting("kill_cap_faction_" .. community, 0)
         if cap > 0 and count_recent_kills(kill_log_faction, community, now) >= cap then
@@ -1671,6 +1697,7 @@ local function on_game_load()
     -- Drop the rolling kill-rate logs: they are in-memory only (time_global keeps running
     -- across a load), so without this a freshly loaded save would inherit up to a minute of
     -- kill stamps from whatever was playing before.
+    kill_log_global      = {}
     kill_log_faction     = {}
     kill_log_rank        = {}
 
@@ -1685,6 +1712,7 @@ local function on_level_changed()
     invalidate_cache()
     npc_state            = {}
     pcall_failures_seen  = {}
+    kill_log_global      = {}
     kill_log_faction     = {}
     kill_log_rank        = {}
 
@@ -1722,7 +1750,13 @@ end
 local function on_option_change()
     local old_show_debug = cached_show_debug_anomalies
     update_mcm_cache()
-    
+
+    -- The legacy-ignores toggle changes which anomalies are skipped; drop the memoized
+    -- ignore lists and the anomaly cache so the next rebuild reflects the new setting.
+    ignored_anomalies_hash = nil
+    ignored_anomalies_patterns = nil
+    invalidate_cache()
+
     if get_mcm_setting("cleanup_map_markers", false) then
         cleanup_old_map_markers()
     end

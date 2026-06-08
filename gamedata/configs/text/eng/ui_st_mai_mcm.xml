@@ -122,6 +122,13 @@
         <text>How long an NPC remembers a detected anomaly after leaving the area. Remembered anomalies bypass the miss roll, so avoidance stays reliable. Set to 0 to disable memory entirely. Default: 30s</text>
     </string>
 
+    <string id="ui_mcm_mai_legacy_anomaly_ignores">
+        <text>Legacy Hardcoded Ignores</text>
+    </string>
+    <string id="ui_mcm_mai_legacy_anomaly_ignores_desc">
+        <text>Keep skipping the per-location anomaly fields that were hardcoded back when avoidance could not safely route NPCs around dense or enclosed clusters (Cordon, Garbage, Wild Territory, Army Warehouses). Turn OFF to let MAI manage those fields with the current pipeline (avoid, suppress damage, and let the corpse-loot guard see bodies that fall inside them). Anomalies with no radius are always skipped regardless. Default: ON</text>
+    </string>
+
     <!-- ### Damage Settings ### -->
     
     <string id="ui_mcm_mai_enable_armor_damage_mult">
@@ -269,6 +276,13 @@
     </string>
     <string id="ui_mcm_mai_kill_rate_limit_desc">
         <text>Cap how many NPCs anomalies can kill per minute, separately per faction and per rank. An NPC is protected from anomaly damage once EITHER its faction OR its rank reaches its cap in the rolling minute. Each cap below: 0 = unlimited. Master switch for all caps. Default: ON</text>
+    </string>
+
+    <string id="ui_mcm_mai_kill_cap_global">
+        <text>Total kills/min (all NPCs)</text>
+    </string>
+    <string id="ui_mcm_mai_kill_cap_global_desc">
+        <text>Universal cap on total anomaly kills per minute across every NPC, regardless of faction or rank. Once this many NPCs have died to anomalies in the rolling minute, all NPCs stop taking anomaly damage until older kills age out of the window. This is the main, top-level limit; the per-faction and per-rank caps below stack under it. 0 = unlimited. Default: 0</text>
     </string>
 
     <string id="ui_mcm_mai_kill_cap_faction_stalker">
