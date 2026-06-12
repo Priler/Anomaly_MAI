@@ -5,6 +5,8 @@
 local defaults = {
     -- general
     mod_enabled = true,
+
+    -- debug
     debug_mode = false,
     verbose_debug = false,
     show_debug_anomalies = false,
@@ -22,19 +24,22 @@ local defaults = {
     legacy_anomaly_ignores = true,
 
     -- avoidance
-    npc_stuck_timeout = 40,
+    npc_stuck_timeout = 20,
     engine_avoidance = true,
-    engine_feel_max_density = 4,
+    engine_feel_max_density = 3,
 
     -- damage
     enable_armor_damage_mult = true,
     immune_zero_miss_chance = true,
     combat_only_damage = true,
-    block_anomalies_on_corpses = true,
-    block_corpse_loot_in_anomalies = true,
-    
-    -- movement
     walking_immunity = true,
+    standing_immunity = true,
+    block_anomalies_on_corpses = true,
+
+    -- avoidance (corpse loot guard)
+    block_corpse_loot_in_anomalies = true,
+
+    -- movement
     safe_grace_period = 10,
     standing_miss_multiplier = 0.3,
     walking_miss_multiplier = 0.6,
@@ -42,18 +47,18 @@ local defaults = {
     combat_miss_multiplier = 3.0,
 
     -- ranks
-    rank_novice_miss_chance = 90,
-    rank_trainee_miss_chance = 75,
-    rank_experienced_miss_chance = 50,
-    rank_professional_miss_chance = 25,
-    rank_veteran_miss_chance = 15,
-    rank_expert_miss_chance = 10,
-    rank_master_miss_chance = 5,
+    rank_novice_miss_chance = 75,
+    rank_trainee_miss_chance = 50,
+    rank_experienced_miss_chance = 30,
+    rank_professional_miss_chance = 15,
+    rank_veteran_miss_chance = 10,
+    rank_expert_miss_chance = 5,
+    rank_master_miss_chance = 0,
     rank_legend_miss_chance = 0,
 
     -- anomaly kill rate limit (0 = unlimited; cap = max kills/min for that group)
     kill_rate_limit = true,
-    kill_cap_global = 0,
+    kill_cap_global = 3,
     kill_cap_faction_stalker = 0,
     kill_cap_faction_bandit = 0,
     kill_cap_faction_dolg = 0,
@@ -81,6 +86,8 @@ local defaults = {
     greh_ignore_restrictions = true,
     monolith_ignore_damage = true,
     monolith_ignore_restrictions = false,
+    zombied_ignore_damage = false,
+    zombied_ignore_restrictions = true,
 }
 
 
@@ -93,15 +100,18 @@ local OPTION_GROUP = {}
 local function assign_group(group, ids)
     for i = 1, #ids do OPTION_GROUP[ids[i]] = group end
 end
-assign_group("general",   { "mod_enabled", "debug_mode", "verbose_debug", "show_debug_anomalies",
+assign_group("general",   { "mod_enabled" })
+assign_group("debug",     { "debug_mode", "verbose_debug", "show_debug_anomalies",
                             "cleanup_map_markers", "debug_death_news", "debug_death_map_spot" })
 assign_group("detection", { "base_detection_radius", "cache_rebuild_delay", "bubble_enabled",
                             "bubble_radius", "restrictions_ignore_radius", "anomaly_memory_decay",
                             "legacy_anomaly_ignores" })
-assign_group("avoidance", { "npc_stuck_timeout", "engine_avoidance", "engine_feel_max_density" })
+assign_group("avoidance", { "npc_stuck_timeout", "engine_avoidance", "engine_feel_max_density",
+                            "block_corpse_loot_in_anomalies" })
 assign_group("damage",    { "enable_armor_damage_mult", "immune_zero_miss_chance", "combat_only_damage",
-                            "block_anomalies_on_corpses", "block_corpse_loot_in_anomalies" })
-assign_group("movement",  { "walking_immunity", "safe_grace_period", "standing_miss_multiplier",
+                            "walking_immunity", "standing_immunity",
+                            "block_anomalies_on_corpses" })
+assign_group("movement",  { "safe_grace_period", "standing_miss_multiplier",
                             "walking_miss_multiplier", "running_miss_multiplier", "combat_miss_multiplier" })
 assign_group("ranks",     { "rank_novice_miss_chance", "rank_trainee_miss_chance", "rank_experienced_miss_chance",
                             "rank_professional_miss_chance", "rank_veteran_miss_chance", "rank_expert_miss_chance",
@@ -116,7 +126,8 @@ assign_group("killrate",  { "kill_rate_limit", "kill_cap_global",
                             "kill_cap_rank_professional", "kill_cap_rank_veteran", "kill_cap_rank_expert",
                             "kill_cap_rank_master", "kill_cap_rank_legend" })
 assign_group("community", { "greh_ignore_damage", "greh_ignore_restrictions",
-                            "monolith_ignore_damage", "monolith_ignore_restrictions" })
+                            "monolith_ignore_damage", "monolith_ignore_restrictions",
+                            "zombied_ignore_damage", "zombied_ignore_restrictions" })
 
 local function full_key(key)
     local g = OPTION_GROUP[key]
@@ -163,12 +174,6 @@ function on_mcm_load()
         gr = {
             subcategory("general", "ui_mcm_mai_general_title", {
                 { id = "mod_enabled",           type = "check", val = 1, def = true },
-                { id = "debug_mode",            type = "check", val = 1, def = false },
-                { id = "verbose_debug",         type = "check", val = 1, def = false },
-                { id = "show_debug_anomalies",  type = "check", val = 1, def = false },
-                { id = "cleanup_map_markers",   type = "check", val = 1, def = false },
-                { id = "debug_death_news",      type = "check", val = 1, def = false },
-                { id = "debug_death_map_spot",  type = "check", val = 1, def = false },
             }),
 
             subcategory("detection", "ui_mcm_mai_detection_title", {
@@ -182,21 +187,22 @@ function on_mcm_load()
             }),
 
             subcategory("avoidance", "ui_mcm_mai_pathfinding_title", {
-                { id = "npc_stuck_timeout",        type = "track", val = 2, min = 4, max = 120, step = 1, def = 40 },
+                { id = "npc_stuck_timeout",        type = "track", val = 2, min = 4, max = 120, step = 1, def = 20 },
                 { id = "engine_avoidance",         type = "check", val = 1, def = true },
-                { id = "engine_feel_max_density",  type = "track", val = 2, min = 1, max = 15, step = 1, def = 4 },
+                { id = "engine_feel_max_density",  type = "track", val = 2, min = 1, max = 15, step = 1, def = 3 },
+                { id = "block_corpse_loot_in_anomalies", type = "check", val = 1, def = true },
             }),
 
             subcategory("damage", "ui_mcm_mai_damage_title", {
                 { id = "enable_armor_damage_mult",       type = "check", val = 1, def = true },
                 { id = "immune_zero_miss_chance",        type = "check", val = 1, def = true },
                 { id = "combat_only_damage",             type = "check", val = 1, def = true },
+                { id = "walking_immunity",               type = "check", val = 1, def = true },
+                { id = "standing_immunity",              type = "check", val = 1, def = true },
                 { id = "block_anomalies_on_corpses",     type = "check", val = 1, def = true },
-                { id = "block_corpse_loot_in_anomalies", type = "check", val = 1, def = true },
             }),
 
             subcategory("movement", "ui_mcm_mai_movement_title", {
-                { id = "walking_immunity",         type = "check", val = 1, def = true },
                 { id = "safe_grace_period",        type = "track", val = 2, min = 0, max = 30, step = 1, def = 10 },
                 { id = "standing_miss_multiplier", type = "track", val = 2, min = 0.1, max = 1.0, step = 0.1, def = 0.3 },
                 { id = "walking_miss_multiplier",  type = "track", val = 2, min = 0.1, max = 1.5, step = 0.1, def = 0.6 },
@@ -205,20 +211,21 @@ function on_mcm_load()
             }),
 
             subcategory("ranks", "ui_mcm_mai_rank_title", {
-                { id = "rank_novice_miss_chance",       type = "track", val = 2, min = 0, max = 100, step = 5, def = 90 },
-                { id = "rank_trainee_miss_chance",      type = "track", val = 2, min = 0, max = 100, step = 5, def = 75 },
-                { id = "rank_experienced_miss_chance",  type = "track", val = 2, min = 0, max = 100, step = 5, def = 50 },
-                { id = "rank_professional_miss_chance", type = "track", val = 2, min = 0, max = 100, step = 5, def = 25 },
-                { id = "rank_veteran_miss_chance",      type = "track", val = 2, min = 0, max = 100, step = 5, def = 15 },
-                { id = "rank_expert_miss_chance",       type = "track", val = 2, min = 0, max = 100, step = 5, def = 10 },
-                { id = "rank_master_miss_chance",       type = "track", val = 2, min = 0, max = 100, step = 5, def = 5 },
+                { id = "rank_novice_miss_chance",       type = "track", val = 2, min = 0, max = 100, step = 5, def = 75 },
+                { id = "rank_trainee_miss_chance",      type = "track", val = 2, min = 0, max = 100, step = 5, def = 50 },
+                { id = "rank_experienced_miss_chance",  type = "track", val = 2, min = 0, max = 100, step = 5, def = 30 },
+                { id = "rank_professional_miss_chance", type = "track", val = 2, min = 0, max = 100, step = 5, def = 15 },
+                { id = "rank_veteran_miss_chance",      type = "track", val = 2, min = 0, max = 100, step = 5, def = 10 },
+                { id = "rank_expert_miss_chance",       type = "track", val = 2, min = 0, max = 100, step = 5, def = 5 },
+                { id = "rank_master_miss_chance",       type = "track", val = 2, min = 0, max = 100, step = 5, def = 0 },
                 { id = "rank_legend_miss_chance",       type = "track", val = 2, min = 0, max = 100, step = 5, def = 0 },
             }),
 
             subcategory("killrate", "ui_mcm_mai_kill_rate_title", {
                 { id = "kill_rate_limit", type = "check", val = 1, def = true },
-                { id = "kill_cap_global", type = "track", val = 2, min = 0, max = 50, step = 1, def = 0 },
+                { id = "kill_cap_global", type = "track", val = 2, min = 0, max = 50, step = 1, def = 3 },
 
+                { id = "header_faction_caps", type = "title", text = "ui_mcm_mai_kill_cap_faction_header", align = "l" },
                 { id = "kill_cap_faction_stalker",  type = "track", val = 2, min = 0, max = 50, step = 1, def = 0 },
                 { id = "kill_cap_faction_bandit",   type = "track", val = 2, min = 0, max = 50, step = 1, def = 0 },
                 { id = "kill_cap_faction_dolg",     type = "track", val = 2, min = 0, max = 50, step = 1, def = 0 },
@@ -233,6 +240,7 @@ function on_mcm_load()
                 { id = "kill_cap_faction_csky",     type = "track", val = 2, min = 0, max = 50, step = 1, def = 0 },
                 { id = "kill_cap_faction_zombied",  type = "track", val = 2, min = 0, max = 50, step = 1, def = 0 },
 
+                { id = "header_rank_caps", type = "title", text = "ui_mcm_mai_kill_cap_rank_header", align = "l" },
                 { id = "kill_cap_rank_novice",       type = "track", val = 2, min = 0, max = 50, step = 1, def = 0 },
                 { id = "kill_cap_rank_trainee",      type = "track", val = 2, min = 0, max = 50, step = 1, def = 0 },
                 { id = "kill_cap_rank_experienced",  type = "track", val = 2, min = 0, max = 50, step = 1, def = 0 },
@@ -248,6 +256,17 @@ function on_mcm_load()
                 { id = "greh_ignore_restrictions",     type = "check", val = 1, def = true },
                 { id = "monolith_ignore_damage",       type = "check", val = 1, def = true },
                 { id = "monolith_ignore_restrictions", type = "check", val = 1, def = false },
+                { id = "zombied_ignore_damage",        type = "check", val = 1, def = false },
+                { id = "zombied_ignore_restrictions",  type = "check", val = 1, def = true },
+            }),
+
+            subcategory("debug", "ui_mcm_mai_debug_title", {
+                { id = "debug_mode",            type = "check", val = 1, def = false },
+                { id = "verbose_debug",         type = "check", val = 1, def = false },
+                { id = "show_debug_anomalies",  type = "check", val = 1, def = false },
+                { id = "cleanup_map_markers",   type = "check", val = 1, def = false },
+                { id = "debug_death_news",      type = "check", val = 1, def = false },
+                { id = "debug_death_map_spot",  type = "check", val = 1, def = false },
             }),
         }
     }

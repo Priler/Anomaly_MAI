@@ -427,16 +427,20 @@ local function get_npc_community(npc)
     return safe_call(npc.character_community, npc)
 end
 
--- True when the NPC is calm (walking move.walk OR standing move.stand) with no enemy. In this
--- state the "walking_immunity" rule treats it as fully aware: it always detects/avoids anomalies
--- and takes no anomaly damage. Running and combat still roll (panic/haste = mistakes).
--- Standing is included because an NPC can walk into a zone (immune) and then halt inside it; if
--- standing only had its low miss multiplier it would take damage and die where it stopped.
+-- True when the NPC is calm (no enemy) in a movement state whose immunity toggle is on:
+-- walking under walking_immunity, standing under standing_immunity. In an immune state the
+-- NPC is treated as fully aware: it always detects/avoids anomalies and takes no anomaly
+-- damage. Running and combat still roll (panic/haste = mistakes).
+-- Standing has its own toggle so logic anchors (guard posts, campfires, animpoints) placed
+-- inside anomaly fields don't become death traps even when walkers are left mortal
+-- (thank you Arrival/DAO).
 local function is_safe_immune_state(npc)
     if not is_valid_object(npc) then return false end
     if safe_call(npc.best_enemy, npc) then return false end           -- in combat
     local mt = safe_call(npc.movement_type, npc)
-    return mt == move.walk or mt == move.stand
+    if mt == move.walk  then return get_mcm_setting("walking_immunity", true) end
+    if mt == move.stand then return get_mcm_setting("standing_immunity", true) end
+    return false
 end
 
 -- [ Anomaly-Kill Rate Limiter ]--
@@ -493,7 +497,7 @@ local function kill_cap_reached(community, rank, now)
     if not get_mcm_setting("kill_rate_limit", true) then return false end
     -- Universal cap: total confirmed anomaly kills in the window across everyone. Hit it and
     -- all NPCs are protected (no anomaly damage) until the rolling window frees up.
-    local gcap = get_mcm_setting("kill_cap_global", 0)
+    local gcap = get_mcm_setting("kill_cap_global", 3)
     if gcap > 0 then
         local n, kept = prune_count(kill_log_global, now)
         kill_log_global = kept or {}
@@ -528,8 +532,12 @@ local function should_enable_anomaly_damage(npc)
     if community == "monolith" and get_mcm_setting("monolith_ignore_damage", true) then
         return false, "mcm_monolith_no_damage"
     end
+    if community == "zombied" and get_mcm_setting("zombied_ignore_damage", false) then
+        return false, "mcm_zombied_no_damage"
+    end
 
-    if zz_allc0r3_mai_npc_settings and community ~= "greh" and community ~= "monolith" then
+    if zz_allc0r3_mai_npc_settings and community ~= "greh" and community ~= "monolith"
+            and community ~= "zombied" then
         if zz_allc0r3_mai_npc_settings.mai_always_full_ignore_community and
            zz_allc0r3_mai_npc_settings.mai_always_full_ignore_community[community] then
             return false, "full_ignore_community"
@@ -561,20 +569,21 @@ local function should_enable_anomaly_damage(npc)
     -- Out of combat they still detect/avoid normally but never get chipped by zones they
     -- calmly pass near. Broader than walking_immunity (covers running out-of-combat too).
     --
-    -- NOTE: when this is ON (default) it fully subsumes walking_immunity, safe_grace_period,
-    -- and the standing/walking/running and rank miss multipliers below: every out-of-combat
-    -- NPC returns here, and in-combat NPCs skip the walking/grace block (it requires no enemy).
-    -- Those finer-grained features only take effect when combat_only_damage is OFF.
+    -- NOTE: when this is ON (default) it fully subsumes walking_immunity, standing_immunity,
+    -- safe_grace_period, and the standing/walking/running and rank miss multipliers below:
+    -- every out-of-combat NPC returns here, and in-combat NPCs skip those blocks (they all
+    -- require no enemy). Those finer-grained features only take effect when this is OFF.
     if get_mcm_setting("combat_only_damage", true) and not safe_call(npc.best_enemy, npc) then
         return false, "not_in_combat"
     end
 
-    -- Walking/standing immunity + grace period (pairs with guaranteed avoidance below).
-    -- A calm NPC (standing/walking, no enemy) takes no anomaly damage and we stamp its
-    -- last-safe time. When it transitions to running, the grace window keeps it protected
-    -- for `safe_grace_period` more seconds so a bolting NPC isn't instantly chipped.
-    -- Combat is always excluded: best_enemy set => no immunity, no grace.
-    if get_mcm_setting("walking_immunity", true) and not safe_call(npc.best_enemy, npc) then
+    -- Calm-state immunity + grace period (pairs with guaranteed avoidance below).
+    -- An NPC in an immune movement state (walking or standing, each under its own toggle,
+    -- no enemy) takes no anomaly damage and we stamp its last-safe time. When it transitions
+    -- to running, the grace window keeps it protected for `safe_grace_period` more seconds
+    -- so a bolting NPC isn't instantly chipped. Combat is always excluded: best_enemy set
+    -- means no immunity, no grace.
+    if not safe_call(npc.best_enemy, npc) then
         local id = npc:id()
         local st = npc_state[id]
         if is_safe_immune_state(npc) then
@@ -631,8 +640,12 @@ local function should_add_restrictions(npc)
     if community == "monolith" and get_mcm_setting("monolith_ignore_restrictions", false) then
         return false
     end
+    if community == "zombied" and get_mcm_setting("zombied_ignore_restrictions", true) then
+        return false
+    end
 
-    if zz_allc0r3_mai_npc_settings and community ~= "greh" and community ~= "monolith" then
+    if zz_allc0r3_mai_npc_settings and community ~= "greh" and community ~= "monolith"
+            and community ~= "zombied" then
         if zz_allc0r3_mai_npc_settings.mai_always_full_ignore_community and
            zz_allc0r3_mai_npc_settings.mai_always_full_ignore_community[community] then
             return false
@@ -681,13 +694,13 @@ local RANK_MCM_KEYS = {
 }
 
 local RANK_DEFAULTS = {
-    ["novice"] = 90,
-    ["trainee"] = 75,
-    ["experienced"] = 50,
-    ["professional"] = 25,
-    ["veteran"] = 15,
-    ["expert"] = 10,
-    ["master"] = 5,
+    ["novice"] = 75,
+    ["trainee"] = 50,
+    ["experienced"] = 30,
+    ["professional"] = 15,
+    ["veteran"] = 10,
+    ["expert"] = 5,
+    ["master"] = 0,
     ["legend"] = 0
 }
 
@@ -957,9 +970,10 @@ local function update_npc_restrictions(npc, detection_radius)
     local final_miss = mfloor(miss_chance * state_mult)
     final_miss = mmax(0, mmin(100, final_miss))
 
-    -- Walking/standing + not in combat = guaranteed detection (0 miss): always restrict/avoid
-    -- every nearby anomaly. Pairs with the no-damage rule in should_enable_anomaly_damage.
-    if get_mcm_setting("walking_immunity", true) and is_safe_immune_state(npc) then
+    -- Immune movement state (walking/standing, per their toggles) + not in combat =
+    -- guaranteed detection (0 miss): always restrict/avoid every nearby anomaly.
+    -- Pairs with the no-damage rule in should_enable_anomaly_damage.
+    if is_safe_immune_state(npc) then
         final_miss = 0
         st.last_safe_time = current_time   -- feeds the running grace window (should_enable_anomaly_damage)
     end
@@ -1056,7 +1070,7 @@ local function update_npc_restrictions(npc, detection_radius)
         --    of add_restrictions.
         -- 2. Dense fields: Avoids the feel system to prevent multi prober freezes and enclosure CTDs.
         if get_mcm_setting("engine_avoidance", true) then
-            local max_density = get_mcm_setting("engine_feel_max_density", 4)
+            local max_density = get_mcm_setting("engine_feel_max_density", 3)
             local local_density = 0
             for _, anom in ipairs(nearby) do
                 if anom.pos and npc_pos:distance_to(anom.pos) <= FEEL_DENSITY_RADIUS then
@@ -1077,7 +1091,7 @@ local function update_npc_restrictions(npc, detection_radius)
                     st.restrict_anchor_pos = npc_pos
                     st.restrict_start      = current_time
                 end
-                local feel_stuck_ms = get_mcm_setting("npc_stuck_timeout", 40) * 1000
+                local feel_stuck_ms = get_mcm_setting("npc_stuck_timeout", 20) * 1000
                 if (current_time - st.restrict_start) > feel_stuck_ms then
                     commit_push_through(npc, st, "stuck (engine avoidance)")
                 end
@@ -1109,7 +1123,7 @@ local function update_npc_restrictions(npc, detection_radius)
             st.restrict_start      = current_time
         end
 
-        local stuck_ms = get_mcm_setting("npc_stuck_timeout", 40) * 1000
+        local stuck_ms = get_mcm_setting("npc_stuck_timeout", 20) * 1000
         if (current_time - st.restrict_start) > stuck_ms then
             commit_push_through(npc, st, "stuck routing around")
         end

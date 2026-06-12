@@ -17,6 +17,9 @@
     <string id="ui_mcm_mai_general_title">
         <text>General Settings</text>
     </string>
+    <string id="ui_mcm_mai_debug_title">
+        <text>Настройки отладки</text>
+    </string>
     <string id="ui_mcm_mai_detection_title">
         <text>Detection Settings</text>
     </string>
@@ -149,7 +152,7 @@
         <text>Урон только в бою</text>
     </string>
     <string id="ui_mcm_mai_combat_only_damage_desc">
-        <text>НПС получают урон от аномалий только в бою (есть враг). Вне боя они по-прежнему обнаруживают и обходят аномалии, но не получают урон от зон, мимо которых проходят. Пока этот параметр ВКЛ, он переопределяет "Неуязвимость идущих НПС", "Период защиты" и множители промаха по движению/рангу (вне боя НПС и так неуязвимы); выключите его, чтобы использовать эти настройки. По умолчанию: ВКЛ</text>
+        <text>НПС получают урон от аномалий только в бою (есть враг). Вне боя они по-прежнему обнаруживают и обходят аномалии, но не получают урон от зон, мимо которых проходят. Пока этот параметр ВКЛ, он переопределяет "Неуязвимость идущих НПС", "Стоящие НПС неуязвимы", "Период защиты" и множители промаха по движению/рангу (вне боя НПС и так неуязвимы); выключите его, чтобы использовать эти настройки. По умолчанию: ВКЛ</text>
     </string>
 
     <string id="ui_mcm_mai_block_anomalies_on_corpses">
@@ -172,7 +175,13 @@
         <text>Walking NPCs Immune</text>
     </string>
     <string id="ui_mcm_mai_walking_immunity_desc">
-        <text>While walking and not in combat, NPCs always detect and avoid anomalies and take no anomaly damage (the movement multipliers below still apply when standing, running, or in combat).</text>
+        <text>While walking and not in combat, NPCs always detect and avoid anomalies and take no anomaly damage. Covers only the walking state: standing has its own toggle, and running and combat roll the Movement State Multipliers. Default: ON</text>
+    </string>
+    <string id="ui_mcm_mai_standing_immunity">
+        <text>Стоящие НПС неуязвимы</text>
+    </string>
+    <string id="ui_mcm_mai_standing_immunity_desc">
+        <text>Стоя на месте и вне боя, НПС всегда обнаруживают и обходят аномалии и не получают урон от них. Защищает НПС, чья точка поста или костра находится прямо в аномальном поле: они упорно возвращаются на эту точку и иначе погибали бы там один за другим. Работает независимо от опции неуязвимости идущих НПС, так что ходьба и бег могут оставаться смертельными. По умолчанию: ВКЛ</text>
     </string>
     <string id="ui_mcm_mai_safe_grace_period">
         <text>Период защиты (сек)</text>
@@ -214,49 +223,49 @@
         <text>Novice</text>
     </string>
     <string id="ui_mcm_mai_rank_novice_miss_chance_desc">
-        <text>Base miss chance for Novice stalkers. Higher = more likely to walk into anomalies. Default: 90%</text>
+        <text>Base miss chance for Novice stalkers. Higher = more likely to walk into anomalies. Default: 75%</text>
     </string>
     
     <string id="ui_mcm_mai_rank_trainee_miss_chance">
         <text>Trainee</text>
     </string>
     <string id="ui_mcm_mai_rank_trainee_miss_chance_desc">
-        <text>Base miss chance for Trainee stalkers. Default: 75%</text>
+        <text>Base miss chance for Trainee stalkers. Default: 50%</text>
     </string>
     
     <string id="ui_mcm_mai_rank_experienced_miss_chance">
         <text>Experienced</text>
     </string>
     <string id="ui_mcm_mai_rank_experienced_miss_chance_desc">
-        <text>Base miss chance for Experienced stalkers. Default: 50%</text>
+        <text>Base miss chance for Experienced stalkers. Default: 30%</text>
     </string>
     
     <string id="ui_mcm_mai_rank_professional_miss_chance">
         <text>Professional</text>
     </string>
     <string id="ui_mcm_mai_rank_professional_miss_chance_desc">
-        <text>Base miss chance for Professional stalkers. Default: 25%</text>
+        <text>Base miss chance for Professional stalkers. Default: 15%</text>
     </string>
     
     <string id="ui_mcm_mai_rank_veteran_miss_chance">
         <text>Veteran</text>
     </string>
     <string id="ui_mcm_mai_rank_veteran_miss_chance_desc">
-        <text>Base miss chance for Veteran stalkers. 0% = never walks into anomalies. Default: 15%</text>
+        <text>Base miss chance for Veteran stalkers. 0% = never walks into anomalies. Default: 10%</text>
     </string>
     
     <string id="ui_mcm_mai_rank_expert_miss_chance">
         <text>Expert</text>
     </string>
     <string id="ui_mcm_mai_rank_expert_miss_chance_desc">
-        <text>Base miss chance for Expert stalkers. Default: 10%</text>
+        <text>Base miss chance for Expert stalkers. Default: 5%</text>
     </string>
     
     <string id="ui_mcm_mai_rank_master_miss_chance">
         <text>Master</text>
     </string>
     <string id="ui_mcm_mai_rank_master_miss_chance_desc">
-        <text>Base miss chance for Master stalkers. Default: 5%</text>
+        <text>Base miss chance for Master stalkers. Default: 0%</text>
     </string>
     
     <string id="ui_mcm_mai_rank_legend_miss_chance">
@@ -282,7 +291,14 @@
         <text>Всего убийств/мин (все НПС)</text>
     </string>
     <string id="ui_mcm_mai_kill_cap_global_desc">
-        <text>Универсальный лимит на общее число убийств аномалиями в минуту по всем НПС, независимо от фракции и ранга. Как только за скользящую минуту от аномалий погибает столько НПС, все НПС перестают получать урон от аномалий, пока старые убийства не выйдут за пределы окна. Это основной лимит верхнего уровня; лимиты по фракции и рангу ниже работают дополнительно. 0 = без ограничения. По умолчанию: 0</text>
+        <text>Универсальный лимит на общее число убийств аномалиями в минуту по всем НПС, независимо от фракции и ранга. Как только за скользящую минуту от аномалий погибает столько НПС, все НПС перестают получать урон от аномалий, пока старые убийства не выйдут за пределы окна. Это основной лимит верхнего уровня; лимиты по фракции и рангу ниже работают дополнительно. 0 = без ограничения. По умолчанию: 3</text>
+    </string>
+
+    <string id="ui_mcm_mai_kill_cap_faction_header">
+        <text>По фракциям</text>
+    </string>
+    <string id="ui_mcm_mai_kill_cap_rank_header">
+        <text>По рангам</text>
     </string>
 
     <string id="ui_mcm_mai_kill_cap_faction_stalker">
@@ -437,7 +453,7 @@
         <text>Feel Density Limit</text>
     </string>
     <string id="ui_mcm_mai_engine_feel_max_density_desc">
-        <text>Max anomalies within ~12m for a field to count as "sparse" and use engine feel avoidance. Denser fields fall back to script restrictions + sprint-through. Higher = feel used in more crowded fields (better avoidance, more freeze/crash risk); lower = safer. Default: 4</text>
+        <text>Max anomalies within ~12m for a field to count as "sparse" and use engine feel avoidance. Denser fields fall back to script restrictions + sprint-through. Higher = feel used in more crowded fields (better avoidance, more freeze/crash risk); lower = safer. Default: 3</text>
     </string>
 
     <!-- ### Community Exclusions ### -->
@@ -472,6 +488,20 @@
     </string>
     <string id="ui_mcm_mai_monolith_ignore_restrictions_desc">
         <text>Monolith faction NPCs do not get pathfinding restrictions to avoid anomalies. Default: OFF</text>
+    </string>
+
+    <string id="ui_mcm_mai_zombied_ignore_damage">
+        <text>Зомбированные: игнорировать урон аномалий</text>
+    </string>
+    <string id="ui_mcm_mai_zombied_ignore_damage_desc">
+        <text>Зомбированные сталкеры неуязвимы к урону от аномалий. По умолчанию: ВЫКЛ</text>
+    </string>
+
+    <string id="ui_mcm_mai_zombied_ignore_restrictions">
+        <text>Зомбированные: игнорировать обход аномалий</text>
+    </string>
+    <string id="ui_mcm_mai_zombied_ignore_restrictions_desc">
+        <text>Зомбированные сталкеры не получают ограничений поиска пути для обхода аномалий: безмозглые, бредут напрямик. По умолчанию: ВКЛ</text>
     </string>
 
 </string_table>
